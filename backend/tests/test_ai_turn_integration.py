@@ -131,6 +131,8 @@ def quick_settings():
 
 @pytest.mark.asyncio
 async def test_v2_turn_projects_committed_events_and_survives_reload(turn_harness):
+    from app.runtime.memory import rebuild_session_memory
+
     session = await turn_harness.create_ready_session()
     response = await turn_harness.submit_turn(session, "Undersøg regnskaberne.")
     assert response.status_code == 202, response.text
@@ -190,6 +192,23 @@ async def test_v2_turn_projects_committed_events_and_survives_reload(turn_harnes
         "simulation_event_recorded",
     ]
     assert stored_session.state == result["state"]
+
+    worker_projection = result["state"]
+    assert await rebuild_session_memory(UUID(session["id"])) == worker_projection
+
+    async with session_factory() as db, db.begin():
+        stored_session = await db.get(GameSession, UUID(session["id"]))
+        assert stored_session is not None
+        stored_session.state = {"stale_projection": True}
+
+    assert (
+        await rebuild_session_memory(UUID(session["id"]), persist=True)
+        == worker_projection
+    )
+    async with session_factory() as db:
+        repaired_session = await db.get(GameSession, UUID(session["id"]))
+        assert repaired_session is not None
+        assert repaired_session.state == worker_projection
 
 
 @pytest.mark.parametrize("truncated_before_tool_plan", [False, True])
@@ -924,6 +943,8 @@ async def test_transient_failure_allows_one_same_request_retry_cycle(turn_harnes
 
 @pytest.mark.asyncio
 async def test_duplicate_submission_and_provider_retry_create_one_turn(turn_harness):
+    from app.runtime.memory import rebuild_session_memory
+
     session = await turn_harness.create_ready_session()
     client_turn_id = UUID(int=17)
     first = await turn_harness.submit_turn(
@@ -982,3 +1003,7 @@ async def test_duplicate_submission_and_provider_retry_create_one_turn(turn_harn
             )
         ).scalars().all()
         assert len(committed) == 1
+    assert (
+        await rebuild_session_memory(UUID(session["id"]))
+        == completed.json()["result"]["state"]
+    )

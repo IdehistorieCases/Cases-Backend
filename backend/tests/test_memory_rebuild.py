@@ -5,10 +5,16 @@ import importlib
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 
 from app.db.connection import session_factory
-from app.db.models import CommittedTurn, GameEvent, GameSession, TurnRequest
+from app.db.models import (
+    CommittedTurn,
+    GameEvent,
+    GameSession,
+    SessionInitializationJob,
+    TurnRequest,
+)
 
 
 def _memory_service():
@@ -49,7 +55,14 @@ async def _insert_committed_turn(
         request_id=request.id,
         turn_number=turn_number,
         # Replay must use the ordered event stream, never this cached result.
-        result={"state": {"stale_result_snapshot": turn_number}},
+        result={
+            "state": {"stale_result_snapshot": turn_number},
+            # The worker stores its accepted state-event list in this result. The
+            # rebuild uses this only to detect missing event rows, never to project.
+            "events": [
+                {"event_type": event_type, **payload} for event_type, payload in events
+            ],
+        },
     )
     db.add(committed)
     await db.flush()
@@ -76,7 +89,7 @@ async def _insert_committed_turn(
 
 
 @pytest.mark.asyncio
-async def test_rebuild_replays_ten_turns_after_retries_and_restart(turn_harness):
+async def test_rebuild_replays_ten_turns_and_keeps_contradictions_typed(turn_harness):
     memory = _memory_service()
     session_body = await turn_harness.create_ready_session()
     session_id = UUID(session_body["id"])
@@ -104,7 +117,7 @@ async def test_rebuild_replays_ten_turns_after_retries_and_restart(turn_harness)
             "historical_claim_recorded",
             {
                 "truth_type": "historical_evidence",
-                "claim": "The reviewed passage describes crowded loft buildings.",
+                "claim": "The reviewed passage says the south exit was always clear.",
                 "evidence_ids": ["passage-reviewed-1"],
                 "world_date": date_at_start,
                 "actor_id": "commission",
@@ -114,7 +127,7 @@ async def test_rebuild_replays_ten_turns_after_retries_and_restart(turn_harness)
             "player_claim_recorded",
             {
                 "truth_type": "player_claim",
-                "text": "The south exit was always clear.",
+                "text": "The south exit was blocked during the inspection.",
                 "world_date": date_at_start,
                 "actor_id": "worker_delegate",
             },
@@ -153,7 +166,12 @@ async def test_rebuild_replays_ten_turns_after_retries_and_restart(turn_harness)
 
     async with session_factory() as db, db.begin():
         for turn_number, events in enumerate(turn_events, start=1):
-            player_text = "Keep the exit open." if turn_number == 1 else f"Player action {turn_number}"
+            if turn_number == 1:
+                player_text = "Keep the exit open."
+            elif turn_number == 7:
+                player_text = "The south exit was blocked during the inspection."
+            else:
+                player_text = f"Player action {turn_number}"
             await _insert_committed_turn(
                 db,
                 session_id,
@@ -204,7 +222,7 @@ async def test_rebuild_replays_ten_turns_after_retries_and_restart(turn_harness)
                 ],
                 "historical_claims": [
                     {
-                        "claim": "The reviewed passage describes crowded loft buildings.",
+                        "claim": "The reviewed passage says the south exit was always clear.",
                         "evidence_ids": ["passage-reviewed-1"],
                         "truth_type": "historical_evidence",
                         "world_date": date_at_start,
@@ -213,7 +231,7 @@ async def test_rebuild_replays_ten_turns_after_retries_and_restart(turn_harness)
                 ],
                 "player_claims": [
                     {
-                        "text": "The south exit was always clear.",
+                        "text": "The south exit was blocked during the inspection.",
                         "truth_type": "player_claim",
                         "world_date": date_at_start,
                         "actor_id": "worker_delegate",
@@ -251,8 +269,8 @@ async def test_rebuild_replays_ten_turns_after_retries_and_restart(turn_harness)
         assert session is not None
         assert session.state == expected
 
-    # A fresh service call models replay after worker restart; the retry attempt
-    # count remains one committed choice, not a duplicated event.
+    # A fresh service call is stateless, and retry attempts remain one committed
+    # choice rather than duplicated events.
     assert await memory.rebuild_session_memory(session_id) == expected
     async with session_factory() as db:
         turn_count = await db.scalar(
@@ -323,6 +341,128 @@ async def test_incomplete_event_history_cannot_overwrite_saved_projection(turn_h
         session = await db.get(GameSession, session_id)
         assert session is not None
         session.turn_number = 1
+        session.state = original_state
+
+    with pytest.raises(memory.SessionMemoryRebuildError):
+        await memory.rebuild_session_memory(session_id, persist=True)
+
+    async with session_factory() as db:
+        session = await db.get(GameSession, session_id)
+        assert session is not None
+        assert session.state == original_state
+
+
+@pytest.mark.asyncio
+async def test_missing_trailing_event_cannot_overwrite_saved_projection(turn_harness):
+    memory = _memory_service()
+    session_body = await turn_harness.create_ready_session()
+    session_id = UUID(session_body["id"])
+    original_state = {**session_body["state"], "local_marker": "must survive failure"}
+
+    async with session_factory() as db, db.begin():
+        await _insert_committed_turn(
+            db,
+            session_id,
+            1,
+            "Keep the exit clear",
+            [
+                (
+                    "decision_recorded",
+                    {"summary": "Keep the exit clear", "player_action": "Keep it clear."},
+                )
+            ],
+        )
+        session = await db.get(GameSession, session_id)
+        assert session is not None
+        session.turn_number = 1
+        session.state = original_state
+        missing_event = await db.scalar(
+            select(GameEvent).where(
+                GameEvent.event_type == "decision_recorded",
+                GameEvent.committed_turn_id
+                == select(CommittedTurn.id)
+                .where(CommittedTurn.session_id == session_id)
+                .scalar_subquery(),
+            )
+        )
+        assert missing_event is not None
+        await db.delete(missing_event)
+
+    with pytest.raises(memory.SessionMemoryRebuildError):
+        await memory.rebuild_session_memory(session_id, persist=True)
+
+    async with session_factory() as db:
+        session = await db.get(GameSession, session_id)
+        assert session is not None
+        assert session.state == original_state
+
+
+@pytest.mark.asyncio
+async def test_invalid_turn_zero_seed_cannot_overwrite_saved_projection(turn_harness):
+    memory = _memory_service()
+    session_body = await turn_harness.create_ready_session()
+    session_id = UUID(session_body["id"])
+    original_state = {**session_body["state"], "local_marker": "must survive failure"}
+
+    async with session_factory() as db, db.begin():
+        initialization = (
+            await db.execute(
+                select(SessionInitializationJob).where(
+                    SessionInitializationJob.session_id == session_id
+                )
+            )
+        ).scalar_one()
+        # The immutable-ready trigger is a production guarantee; bypass it only
+        # inside this disposable test database to model a corrupted stored seed.
+        await db.execute(
+            text(
+                "ALTER TABLE session_initialization_jobs "
+                "DISABLE TRIGGER trg_ready_session_initialization_immutable"
+            )
+        )
+        initialization.result = {"initial_state": {}}
+        session = await db.get(GameSession, session_id)
+        assert session is not None
+        session.state = original_state
+        await db.flush()
+        await db.execute(
+            text(
+                "ALTER TABLE session_initialization_jobs "
+                "ENABLE TRIGGER trg_ready_session_initialization_immutable"
+            )
+        )
+
+    with pytest.raises(memory.SessionMemoryRebuildError):
+        await memory.rebuild_session_memory(session_id, persist=True)
+
+    async with session_factory() as db:
+        session = await db.get(GameSession, session_id)
+        assert session is not None
+        assert session.state == original_state
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["queued", "running", "retryable_failure"])
+async def test_rebuild_refuses_persist_while_turn_request_is_active(turn_harness, status):
+    memory = _memory_service()
+    session_body = await turn_harness.create_ready_session()
+    session_id = UUID(session_body["id"])
+    original_state = {**session_body["state"], "local_marker": "must survive"}
+
+    async with session_factory() as db, db.begin():
+        db.add(
+            TurnRequest(
+                id=uuid4(),
+                session_id=session_id,
+                client_turn_id=uuid4(),
+                expected_turn=0,
+                text="A turn is still active",
+                input_language="da",
+                status=status,
+            )
+        )
+        session = await db.get(GameSession, session_id)
+        assert session is not None
         session.state = original_state
 
     with pytest.raises(memory.SessionMemoryRebuildError):

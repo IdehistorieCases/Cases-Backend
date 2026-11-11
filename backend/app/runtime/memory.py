@@ -12,6 +12,7 @@ from app.db.models import (
     GameEvent,
     GameSession,
     SessionInitializationJob,
+    TurnRequest,
 )
 from app.runtime.state import StateProjectionError, project_state
 
@@ -56,11 +57,30 @@ async def rebuild_session_memory(session_id: UUID, *, persist: bool = False) -> 
         ):
             raise SessionMemoryRebuildError("ready initialization state is unavailable")
 
-        state = deepcopy(initialization.result["initial_state"])
+        try:
+            state = project_state(initialization.result["initial_state"], [])
+        except StateProjectionError as exc:
+            raise SessionMemoryRebuildError("ready initialization state is invalid") from exc
+
+        if persist:
+            active_request_id = await db.scalar(
+                select(TurnRequest.id)
+                .where(
+                    TurnRequest.session_id == session_id,
+                    TurnRequest.status.in_(("queued", "running", "retryable_failure")),
+                )
+                .limit(1)
+            )
+            if active_request_id is not None:
+                raise SessionMemoryRebuildError(
+                    "cannot persist rebuilt memory while a turn request is active"
+                )
+
         rows = (
             await db.execute(
                 select(
                     CommittedTurn.turn_number,
+                    CommittedTurn.result,
                     GameEvent.event_index,
                     GameEvent.event_type,
                     GameEvent.payload,
@@ -73,8 +93,10 @@ async def rebuild_session_memory(session_id: UUID, *, persist: bool = False) -> 
         ).all()
 
         events_by_turn: dict[int, list[tuple[int, str, dict]]] = {}
-        for turn_number, event_index, event_type, payload in rows:
+        result_by_turn: dict[int, dict] = {}
+        for turn_number, result, event_index, event_type, payload in rows:
             turn_events = events_by_turn.setdefault(turn_number, [])
+            result_by_turn[turn_number] = result
             if event_index is None:
                 continue
             if not isinstance(event_type, str) or not isinstance(payload, dict):
@@ -88,6 +110,21 @@ async def rebuild_session_memory(session_id: UUID, *, persist: bool = False) -> 
 
         for turn_number in turn_numbers:
             turn_events = events_by_turn[turn_number]
+            result = result_by_turn[turn_number]
+            manifest_events = result.get("events") if isinstance(result, dict) else None
+            if (
+                not isinstance(manifest_events, list)
+                or any(
+                    not isinstance(event, dict)
+                    or not isinstance(event.get("event_type"), str)
+                    for event in manifest_events
+                )
+            ):
+                raise SessionMemoryRebuildError(
+                    "committed turn event count manifest is invalid"
+                )
+            if len(turn_events) != len(manifest_events) + 1:
+                raise SessionMemoryRebuildError("committed event history is incomplete")
             indices = [event_index for event_index, _, _ in turn_events]
             if indices != list(range(len(turn_events))):
                 raise SessionMemoryRebuildError("committed event indexes are incomplete")
@@ -112,10 +149,7 @@ async def rebuild_session_memory(session_id: UUID, *, persist: bool = False) -> 
             state["turn_number"] = turn_number
             state["last_turn_number"] = turn_number
 
-        if len(turn_numbers) != game.turn_number:
-            raise SessionMemoryRebuildError("session turn number does not match committed history")
-
-        rebuilt = deepcopy(state)
+        rebuilt = state
         if persist:
             game.state = rebuilt
         return deepcopy(rebuilt)
