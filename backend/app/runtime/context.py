@@ -21,7 +21,7 @@ from app.scenarios.evidence import VALID_SCOPES, available_source_ids, citation_
 from app.scenarios.schema_v2 import ScenarioDefinitionV2
 from app.scenarios.validation import validate_v2_definition
 
-ContextStage = Literal["initialization", "turn"]
+ContextStage = Literal["initialization", "turn", "reflection"]
 ContextMode = Literal["gameplay", "postgame"]
 AUTHOR_CONTEXT_TRUST = "author_context_not_historical_evidence"
 HISTORICAL_EVIDENCE_TRUST = "historical_evidence"
@@ -518,10 +518,12 @@ async def build_session_context(
     retrieved passages. ``top_k`` and ``max_chars`` remain available as direct
     per-call overrides.
     """
-    if stage not in {"initialization", "turn"}:
-        raise ValueError("stage must be initialization or turn")
+    if stage not in {"initialization", "turn", "reflection"}:
+        raise ValueError("stage must be initialization, turn, or reflection")
     if mode not in {"gameplay", "postgame"}:
         raise ValueError("mode must be gameplay or postgame")
+    if stage == "reflection" and mode != "postgame":
+        raise ValueError("reflection context requires postgame mode")
     if not isinstance(query, str):
         raise ValueError("query must be a string")
     resolved_budget = budget or ContextBudget()

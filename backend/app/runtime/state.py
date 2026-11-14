@@ -205,5 +205,6 @@ def _apply_event(state: dict, event: object) -> None:
         if state.get("completion_status") == "complete":
             raise StateProjectionError("scene is already complete")
         state["completion_status"] = "complete"
+        state["completion_reason"] = event.reason
         return
     raise StateProjectionError("event type is unsupported")
