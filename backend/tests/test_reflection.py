@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+from pathlib import Path
 from types import SimpleNamespace
 from uuid import UUID, uuid4
 
@@ -21,7 +22,7 @@ from app.rag.policy import EvidencePassage, PassageApproval
 from app.rag.retrieval import RAG_NO_EVIDENCE, RagSearchResult, SearchCandidate
 from app.scenarios.loader import load_scenario
 
-FIXTURE = "tests/fixtures/scenarios/industrial-inquiry/1.0.yaml"
+FIXTURE = Path(__file__).resolve().parent / "fixtures/scenarios/industrial-inquiry/1.0.yaml"
 PASSAGE_ID = "a6a00000-0000-4000-8000-000000000001"
 OTHER_PASSAGE_ID = "a6a00000-0000-4000-8000-000000000002"
 
