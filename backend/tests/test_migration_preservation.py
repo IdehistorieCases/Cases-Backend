@@ -235,7 +235,7 @@ async def test_upgrade_from_previous_scenario_revision_preserves_release_and_con
                 "sha256": sha256(
                     loaded.content_items[loaded.definition.content_items[0].key].encode("utf-8")
                 ).hexdigest(),
-                "migration_head": "0014_turn_retry_diagnostics",
+                "migration_head": "0015_session_narrator",
             }
         finally:
             await db.close()
@@ -339,7 +339,7 @@ async def test_downgrade_refuses_to_drop_published_v2_content():
                 scenario_id,
             )
             assert dict(preserved) == {
-                "migration_head": "0014_turn_retry_diagnostics",
+                "migration_head": "0015_session_narrator",
                 "content_rows": len(loaded.definition.content_items),
             }
         finally:
@@ -421,7 +421,7 @@ async def test_downgrade_refuses_to_drop_pending_initialization_and_create_key()
                 session_id,
             )
             assert dict(preserved) == {
-                "migration_head": "0014_turn_retry_diagnostics",
+                "migration_head": "0015_session_narrator",
                 "jobs": 1,
                 "create_key": "b" * 64,
             }
@@ -505,7 +505,7 @@ async def test_downgrade_refuses_to_drop_committed_initialization_provenance():
                 """,
                 job_id,
             )
-            assert preserved["migration_head"] == "0014_turn_retry_diagnostics"
+            assert preserved["migration_head"] == "0015_session_narrator"
             assert preserved["repair_used"] is True
             attempt_metadata = preserved["attempt_metadata"]
             if isinstance(attempt_metadata, str):
@@ -590,7 +590,7 @@ async def test_downgrade_refuses_to_drop_initialization_failure_stage():
                 job_id,
             )
             assert dict(preserved) == {
-                "migration_head": "0014_turn_retry_diagnostics",
+                "migration_head": "0015_session_narrator",
                 "failure_code": "MODEL_OUTPUT_INVALID",
                 "failure_stage": "validation",
             }
