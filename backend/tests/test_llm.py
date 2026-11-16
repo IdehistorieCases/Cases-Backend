@@ -137,8 +137,45 @@ async def test_generic_structured_output_uses_call_schema_and_records_provider_m
     assert result.provider_request_id == "req-structured-42"
     assert result.prompt_tokens == 18
     assert result.completion_tokens == 4
+    assert result.provider == "local_qwen"
+    assert result.reasoning_effort is None
     assert result.duration_ms >= 0
     assert len(result.raw_output_sha256) == 64
+
+
+@pytest.mark.asyncio
+async def test_codex_bridge_headers_and_provider_provenance_are_explicit():
+    def handler(request):
+        assert request.headers["Authorization"] == "Bearer " + "b" * 32
+        return httpx.Response(
+            200,
+            json={
+                **completion('{"status":"ok"}'),
+                "model": "gpt-6-luna",
+                "provider": "spoofed-value",
+                "reasoning_effort": "low",
+            },
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        result = await InferenceClient(
+            "http://bridge:18765",
+            "gpt-6-luna",
+            http,
+            headers={"Authorization": "Bearer " + "b" * 32},
+            provider_label="codex_cli",
+        ).generate_structured(
+            system_prompt="system",
+            user_prompt="user",
+            schema_name="test_status",
+            response_schema={"type": "object"},
+            max_tokens=16,
+        )
+
+    assert result.requested_model == "gpt-6-luna"
+    assert result.served_model == "gpt-6-luna"
+    assert result.provider == "codex_cli"
+    assert result.reasoning_effort == "high"
 
 
 @pytest.mark.asyncio

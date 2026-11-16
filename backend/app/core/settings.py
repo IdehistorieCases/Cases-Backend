@@ -22,6 +22,11 @@ class Settings(BaseSettings):
     llm_model_alias: str = Field(default="ddu-narrator", min_length=1, max_length=128)
     llm_enable_thinking: bool | None = None
     llm_completion_timeout_seconds: float = Field(default=240.0, ge=1.0, le=600.0)
+    luna_bridge_base_url: str = Field(
+        default="http://host.docker.internal:18765", min_length=1, max_length=2048
+    )
+    luna_bridge_token: str = Field(default="", max_length=512, repr=False)
+    luna_model_id: str = Field(default="gpt-6-luna", min_length=1, max_length=128)
     rag_embed_base_url: str = Field(default="http://ddu-embed:8080", min_length=1, max_length=2048)
     rag_embed_model_id: str = Field(
         default="Qwen/Qwen3-Embedding-0.6B@97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3",
@@ -74,6 +79,27 @@ class Settings(BaseSettings):
         value = value.strip()
         if not value:
             raise ValueError("llm_model_alias must not be empty")
+        return value
+
+    @field_validator("luna_bridge_base_url")
+    @classmethod
+    def validate_luna_bridge_base_url(cls, value: str) -> str:
+        return cls._validated_service_url(value, "luna_bridge_base_url")
+
+    @field_validator("luna_bridge_token")
+    @classmethod
+    def validate_luna_bridge_token(cls, value: str) -> str:
+        value = value.strip()
+        if value and len(value) < 24:
+            raise ValueError("luna_bridge_token must be at least 24 characters when configured")
+        return value
+
+    @field_validator("luna_model_id")
+    @classmethod
+    def validate_luna_model_id(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("luna_model_id must not be empty")
         return value
 
     @field_validator("rag_embed_base_url")

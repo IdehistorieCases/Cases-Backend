@@ -6,7 +6,7 @@ import httpx
 from sqlalchemy import func
 from sqlalchemy.dialects.postgresql import insert
 
-from app.ai.llm import InferenceClient
+from app.ai.providers import build_narrator_registry
 from app.core.settings import WORKER_HEALTH_TIMEOUT_SECONDS, get_settings
 from app.db.connection import engine
 from app.db.models import ServiceHeartbeat
@@ -40,15 +40,11 @@ async def monitor_inference() -> None:
     async with httpx.AsyncClient(
         timeout=httpx.Timeout(WORKER_HEALTH_TIMEOUT_SECONDS), trust_env=False
     ) as client:
-        llm = InferenceClient(
-            settings.llm_base_url,
-            settings.llm_model_alias,
-            client,
-            enable_thinking=settings.llm_enable_thinking,
-        )
+        registry = build_narrator_registry(settings, client)
         while True:
-            ready = await llm.is_ready()
-            message = "model ready" if ready else "model loading or unreachable"
+            ready = await registry.is_ready("local_qwen")
+            luna_ready = await registry.is_ready("gpt6_luna_high")
+            message = f"qwen={'ready' if ready else 'down'}; luna={'ready' if luna_ready else 'down'}"
             try:
                 await record_heartbeat(ready, message)
             except Exception:
@@ -63,12 +59,7 @@ async def run_real_turn_worker() -> None:
     async with httpx.AsyncClient(
         timeout=httpx.Timeout(settings.turn_inference_timeout_seconds), trust_env=False
     ) as http:
-        generator = InferenceClient(
-            settings.llm_base_url,
-            settings.llm_model_alias,
-            http,
-            enable_thinking=settings.llm_enable_thinking,
-        )
+        generator = build_narrator_registry(settings, http)
         retrieval_service = build_retrieval_service(settings, http)
         orchestrator = TurnOrchestrator(
             generator=generator,

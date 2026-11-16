@@ -18,6 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.ai.llm import MAX_REPAIR_INPUT_CHARS, StructuredCompletion, StructuredOutputError
+from app.ai.providers import NarratorUnavailable, select_provider
 from app.core.settings import Settings
 from app.db.connection import session_factory
 from app.db.models import CommittedTurn, GameEvent, GameSession, ScenarioVersion
@@ -625,6 +626,7 @@ class TurnOrchestrator:
                 id=session.id,
                 scenario_version_id=session.scenario_version_id,
                 runtime_version=session.runtime_version,
+                narrator=session.narrator,
                 player_role_id=session.player_role_id,
                 state=state,
                 turn_number=session.turn_number,
@@ -638,9 +640,7 @@ class TurnOrchestrator:
         authorize_repair: Callable[[], Awaitable[bool]],
         record_attempt: Callable[[dict], Awaitable[bool]] | None = None,
     ) -> TurnGeneration:
-        if self.generator is None or not callable(
-            getattr(self.generator, "generate_structured", None)
-        ):
+        if self.generator is None:
             raise TurnGenerationFailure("INFERENCE_UNAVAILABLE", retryable=True)
 
         try:
@@ -651,6 +651,12 @@ class TurnOrchestrator:
             raise TurnGenerationFailure("TURN_CONTEXT_TIMEOUT", retryable=True) from exc
         except SQLAlchemyError as exc:
             raise TurnGenerationFailure("TURN_CONTEXT_UNAVAILABLE", retryable=True) from exc
+        try:
+            generator = select_provider(self.generator, session.narrator)
+        except NarratorUnavailable as exc:
+            raise TurnGenerationFailure("INFERENCE_UNAVAILABLE", retryable=True) from exc
+        if not callable(getattr(generator, "generate_structured", None)):
+            raise TurnGenerationFailure("INFERENCE_UNAVAILABLE", retryable=True)
 
         prompt_state = _bounded_prompt_state(session.state)
         if visible_turns and visible_turns[-1].get("next_player_prompt"):
@@ -826,7 +832,7 @@ class TurnOrchestrator:
             call_started_clock = monotonic()
             try:
                 completion = await asyncio.wait_for(
-                    self.generator.generate_structured(
+                    generator.generate_structured(
                         system_prompt=SYSTEM_PROMPT,
                         user_prompt=request_prompt,
                         schema_name="ddu_turn_agent_response",
@@ -1181,10 +1187,15 @@ class TurnOrchestrator:
                             pin = context.payload["pinned_scenario"]
                             context_sha256 = _digest(user_payload)
                             provenance = {
-                                "provider": "Local-AI-API-LITE",
+                                "provider": (
+                                    "OpenAI Codex CLI" if session.narrator == "gpt6_luna_high"
+                                    else "Local-AI-API-LITE"
+                                ),
+                                "provider_id": completion.provider,
                                 "requested_model": completion.requested_model,
                                 "served_model": completion.served_model,
                                 "model_revision": completion.model_revision,
+                                "reasoning_effort": completion.reasoning_effort,
                                 "provider_request_id": completion.provider_request_id,
                                 "prompt_version": TURN_PROMPT_VERSION,
                                 "prompt_sha256": prompt_sha256,

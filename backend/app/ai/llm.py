@@ -68,6 +68,8 @@ class StructuredCompletion:
     duration_ms: int
     raw_output_sha256: str
     finish_reason: str
+    provider: str = "local_qwen"
+    reasoning_effort: str | None = None
 
 
 def _optional_token_count(usage: object, key: str) -> int | None:
@@ -87,15 +89,19 @@ class InferenceClient:
         client: httpx.AsyncClient,
         *,
         enable_thinking: bool | None = None,
+        headers: dict[str, str] | None = None,
+        provider_label: str = "local_qwen",
     ):
         self.base_url = base_url.rstrip("/")
         self.model_alias = model_alias
         self.client = client
         self.enable_thinking = enable_thinking
+        self.headers = headers or {}
+        self.provider_label = provider_label
 
     async def is_ready(self) -> bool:
         try:
-            response = await self.client.get(f"{self.base_url}/health")
+            response = await self.client.get(f"{self.base_url}/health", headers=self.headers)
             return response.status_code == 200
         except httpx.HTTPError:
             return False
@@ -103,7 +109,7 @@ class InferenceClient:
     async def serves_expected_model(self) -> bool:
         """Explicit setup check; keep model-list polling out of the health loop."""
         try:
-            response = await self.client.get(f"{self.base_url}/v1/models")
+            response = await self.client.get(f"{self.base_url}/v1/models", headers=self.headers)
             response.raise_for_status()
             document = response.json()
         except (httpx.HTTPError, ValueError):
@@ -159,7 +165,9 @@ class InferenceClient:
         if resolved_thinking is not None:
             body["chat_template_kwargs"] = {"enable_thinking": resolved_thinking}
         started = perf_counter()
-        response = await self.client.post(f"{self.base_url}/v1/chat/completions", json=body)
+        response = await self.client.post(
+            f"{self.base_url}/v1/chat/completions", json=body, headers=self.headers
+        )
         response.raise_for_status()
         document = response.json()
         choices = document.get("choices") if isinstance(document, dict) else None
@@ -199,6 +207,8 @@ class InferenceClient:
             duration_ms=max(0, int((perf_counter() - started) * 1000)),
             raw_output_sha256=sha256(raw.encode("utf-8")).hexdigest(),
             finish_reason=finish_reason,
+            provider=self.provider_label,
+            reasoning_effort="high" if self.provider_label == "codex_cli" else None,
         )
 
     async def generate_danish_probe(self) -> ProbeReply:

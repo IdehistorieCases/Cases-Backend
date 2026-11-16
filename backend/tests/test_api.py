@@ -32,6 +32,39 @@ async def test_ready_with_healthy_database(monkeypatch):
         assert response.json()["status"] == "ready"
 
 
+@pytest.mark.asyncio
+async def test_create_session_rejects_an_unknown_narrator_before_database_access():
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.post(
+            "/api/v1/sessions", json={"scenario": "example", "narrator": "unknown"}
+        )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_narrator_listing_reports_models_without_secrets(monkeypatch):
+    class Registry:
+        async def public_status(self):
+            return [
+                {"id": "local_qwen", "name": "Local Qwen", "model": "ddu-narrator", "default": True,
+                 "configured": True, "ready": False},
+                {"id": "gpt6_luna_high", "name": "GPT-6 Luna High", "model": "gpt-6-luna", "default": False,
+                 "reasoning_effort": "high", "configured": False, "ready": False},
+            ]
+
+    monkeypatch.setattr("app.game.routes.build_narrator_registry", lambda *_: Registry())
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.get("/api/v1/narrators")
+
+    assert response.status_code == 200
+    assert response.json()[1]["reasoning_effort"] == "high"
+    assert "Authorization" not in response.text
+
+
 @pytest.mark.skipif(os.getenv("DDU_TEST_DB") != "1", reason="Postgres not configured")
 @pytest.mark.asyncio
 async def test_private_status_reports_the_database_used_by_the_api():

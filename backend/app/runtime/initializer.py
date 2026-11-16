@@ -444,10 +444,15 @@ async def generate_opening(
             opening = proposal.model_dump(mode="json")
             scenario_pin = context.payload["pinned_scenario"]
             provenance = {
-                "provider": "Local-AI-API-LITE",
+                "provider": (
+                    "OpenAI Codex CLI" if completion.provider == "codex_cli"
+                    else "Local-AI-API-LITE"
+                ),
+                "provider_id": completion.provider,
                 "requested_model": completion.requested_model,
                 "served_model": completion.served_model,
                 "model_revision": completion.model_revision,
+                "reasoning_effort": completion.reasoning_effort,
                 "provider_request_id": completion.provider_request_id,
                 "prompt_version": OPENING_PROMPT_VERSION,
                 "enable_thinking": getattr(generator, "enable_thinking", None),

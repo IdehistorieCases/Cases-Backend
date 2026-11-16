@@ -102,6 +102,7 @@ async def test_upgrade_from_populated_m2_database_preserves_sessions_and_turn_hi
                     (SELECT count(*) FROM game_events WHERE id=$4) AS events,
                     (SELECT player_role_id FROM game_sessions WHERE id=$1) AS role_id,
                     (SELECT runtime_version FROM game_sessions WHERE id=$1) AS runtime_version,
+                    (SELECT narrator FROM game_sessions WHERE id=$1) AS narrator,
                     (SELECT is_active FROM scenario_versions
                      WHERE slug='versailles-1919' AND version='1') AS legacy_active,
                     (to_regclass('public.scenario_content_items') IS NOT NULL) AS has_v2_content_table
@@ -118,6 +119,7 @@ async def test_upgrade_from_populated_m2_database_preserves_sessions_and_turn_hi
                 "events": 1,
                 "role_id": None,
                 "runtime_version": "v1_legacy",
+                "narrator": "local_qwen",
                 "legacy_active": True,
                 "has_v2_content_table": True,
             }
@@ -233,7 +235,7 @@ async def test_upgrade_from_previous_scenario_revision_preserves_release_and_con
                 "sha256": sha256(
                     loaded.content_items[loaded.definition.content_items[0].key].encode("utf-8")
                 ).hexdigest(),
-                "migration_head": "0014_turn_retry_diagnostics",
+                "migration_head": "0015_session_narrator",
             }
         finally:
             await db.close()
@@ -337,7 +339,7 @@ async def test_downgrade_refuses_to_drop_published_v2_content():
                 scenario_id,
             )
             assert dict(preserved) == {
-                "migration_head": "0014_turn_retry_diagnostics",
+                "migration_head": "0015_session_narrator",
                 "content_rows": len(loaded.definition.content_items),
             }
         finally:
@@ -419,7 +421,7 @@ async def test_downgrade_refuses_to_drop_pending_initialization_and_create_key()
                 session_id,
             )
             assert dict(preserved) == {
-                "migration_head": "0014_turn_retry_diagnostics",
+                "migration_head": "0015_session_narrator",
                 "jobs": 1,
                 "create_key": "b" * 64,
             }
@@ -503,7 +505,7 @@ async def test_downgrade_refuses_to_drop_committed_initialization_provenance():
                 """,
                 job_id,
             )
-            assert preserved["migration_head"] == "0014_turn_retry_diagnostics"
+            assert preserved["migration_head"] == "0015_session_narrator"
             assert preserved["repair_used"] is True
             attempt_metadata = preserved["attempt_metadata"]
             if isinstance(attempt_metadata, str):
@@ -588,7 +590,7 @@ async def test_downgrade_refuses_to_drop_initialization_failure_stage():
                 job_id,
             )
             assert dict(preserved) == {
-                "migration_head": "0014_turn_retry_diagnostics",
+                "migration_head": "0015_session_narrator",
                 "failure_code": "MODEL_OUTPUT_INVALID",
                 "failure_stage": "validation",
             }
