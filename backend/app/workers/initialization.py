@@ -7,7 +7,7 @@ from time import perf_counter
 
 import httpx
 
-from app.ai.llm import InferenceClient
+from app.ai.providers import NarratorUnavailable, build_narrator_registry, select_provider
 from app.core.settings import Settings, get_settings
 from app.db.connection import session_factory
 from app.db.models import GameSession, ScenarioVersion
@@ -151,6 +151,7 @@ async def process_initialization_claim(
                 or session.runtime_version != "v2_ai"
                 or session.scenario_version_id != scenario.id
                 or session.player_role_id != claim.player_role_id
+                or session.narrator != claim.narrator
             ):
                 raise ContextBuildFailure(
                     "validation_failure", "initialization claim does not match its pinned session"
@@ -187,7 +188,7 @@ async def process_initialization_claim(
             return await mark_repair_attempt(claim)
 
         generation = await generate_opening(
-            generator,
+            select_provider(generator, claim.narrator),
             definition=definition,
             context=context,
             role_id=claim.player_role_id or "",
@@ -216,6 +217,22 @@ async def process_initialization_claim(
             "PROVIDER_UNAVAILABLE",
             True,
             "model" if stage == "model" else "context",
+            [
+                {
+                    "attempt_number": claim.attempts,
+                    "repair": claim.repair_used,
+                    "outcome": "provider_error",
+                    "error_code": "PROVIDER_UNAVAILABLE",
+                    "duration_ms": elapsed,
+                }
+            ],
+        )
+    except NarratorUnavailable:
+        elapsed = max(0, int((perf_counter() - started) * 1000))
+        failure = (
+            "PROVIDER_UNAVAILABLE",
+            True,
+            "model",
             [
                 {
                     "attempt_number": claim.attempts,
@@ -303,12 +320,7 @@ async def run_initialization_worker() -> None:
     async with httpx.AsyncClient(
         timeout=httpx.Timeout(settings.llm_completion_timeout_seconds), trust_env=False
     ) as http:
-        generator = InferenceClient(
-            settings.llm_base_url,
-            settings.llm_model_alias,
-            http,
-            enable_thinking=settings.llm_enable_thinking,
-        )
+        generator = build_narrator_registry(settings, http)
         retrieval_service = build_retrieval_service(settings, http)
         while True:
             claimed = await process_next_initialization(

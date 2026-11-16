@@ -132,6 +132,9 @@ class GameSession(Base):
     __table_args__ = (
         CheckConstraint("turn_number >= 0"),
         CheckConstraint("runtime_version IN ('v1_legacy', 'v2_ai')", name="ck_game_session_runtime_version"),
+        CheckConstraint(
+            "narrator IN ('local_qwen', 'gpt6_luna_high')", name="ck_game_session_narrator"
+        ),
         UniqueConstraint("capability_hash", name="uq_game_sessions_capability_hash"),
         UniqueConstraint("creation_key_hash", name="uq_game_sessions_creation_key_hash"),
     )
@@ -144,6 +147,9 @@ class GameSession(Base):
     creation_key_hash: Mapped[str | None] = mapped_column(String(64))
     runtime_version: Mapped[str] = mapped_column(
         String(16), nullable=False, default="v1_legacy", server_default=text("'v1_legacy'")
+    )
+    narrator: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="local_qwen", server_default=text("'local_qwen'")
     )
     player_role_id: Mapped[str | None] = mapped_column(String(64))
     capability_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

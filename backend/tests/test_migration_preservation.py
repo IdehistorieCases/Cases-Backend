@@ -102,6 +102,7 @@ async def test_upgrade_from_populated_m2_database_preserves_sessions_and_turn_hi
                     (SELECT count(*) FROM game_events WHERE id=$4) AS events,
                     (SELECT player_role_id FROM game_sessions WHERE id=$1) AS role_id,
                     (SELECT runtime_version FROM game_sessions WHERE id=$1) AS runtime_version,
+                    (SELECT narrator FROM game_sessions WHERE id=$1) AS narrator,
                     (SELECT is_active FROM scenario_versions
                      WHERE slug='versailles-1919' AND version='1') AS legacy_active,
                     (to_regclass('public.scenario_content_items') IS NOT NULL) AS has_v2_content_table
@@ -118,6 +119,7 @@ async def test_upgrade_from_populated_m2_database_preserves_sessions_and_turn_hi
                 "events": 1,
                 "role_id": None,
                 "runtime_version": "v1_legacy",
+                "narrator": "local_qwen",
                 "legacy_active": True,
                 "has_v2_content_table": True,
             }

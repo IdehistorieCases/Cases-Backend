@@ -11,7 +11,7 @@ from typing import Annotated, Literal
 import httpx
 from pydantic import Field, StringConstraints, TypeAdapter, ValidationError
 
-from app.ai.llm import InferenceClient
+from app.ai.providers import build_narrator_registry
 from app.core.settings import get_settings
 from app.rag.retrieval import RagSearchService
 from app.runtime.context import (
@@ -466,6 +466,13 @@ async def generate_reflection(generator, reflection_input: dict) -> ReflectionGe
     provenance = {
         "prompt_version": REFLECTION_PROMPT_VERSION,
         "requested_model": getattr(completion, "requested_model", None),
+        "provider": (
+            "OpenAI Codex CLI"
+            if getattr(completion, "provider", None) == "codex_cli"
+            else "Local-AI-API-LITE"
+        ),
+        "provider_id": getattr(completion, "provider", None),
+        "reasoning_effort": getattr(completion, "reasoning_effort", None),
         "served_model": getattr(completion, "served_model", None),
         "model_revision": getattr(completion, "model_revision", None),
         "provider_request_id": getattr(completion, "provider_request_id", None),
@@ -634,17 +641,12 @@ def public_reflection_result(generation: ReflectionGeneration, reflection_input:
     }
 
 
-async def get_reflection_generator() -> AsyncIterator[InferenceClient]:
+async def get_reflection_generator() -> AsyncIterator[object]:
     settings = get_settings()
     async with httpx.AsyncClient(
         timeout=httpx.Timeout(settings.llm_completion_timeout_seconds), trust_env=False
     ) as client:
-        yield InferenceClient(
-            settings.llm_base_url,
-            settings.llm_model_alias,
-            client,
-            enable_thinking=settings.llm_enable_thinking,
-        )
+        yield build_narrator_registry(settings, client)
 
 
 async def get_reflection_retrieval_service() -> AsyncIterator[RagSearchService]:

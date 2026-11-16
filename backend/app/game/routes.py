@@ -7,6 +7,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Annotated, Literal
 from uuid import UUID, uuid4
 
+import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Response
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -14,6 +15,14 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.providers import (
+    GPT6_LUNA_HIGH,
+    LOCAL_QWEN,
+    NarratorUnavailable,
+    build_narrator_registry,
+    select_provider,
+)
+from app.core.settings import get_settings
 from app.db.connection import session_factory
 from app.db.models import (
     CommittedTurn,
@@ -70,6 +79,7 @@ class CreateSession(BaseModel):
     model_config = ConfigDict(extra="forbid")
     scenario: str = Field(min_length=1, max_length=80)
     role_id: str | None = Field(default=None, min_length=2, max_length=64)
+    narrator: Literal["local_qwen", "gpt6_luna_high"] = LOCAL_QWEN
 
 
 class SubmitTurn(BaseModel):
@@ -203,6 +213,7 @@ def public_created_session(
         "scenario": scenario.slug,
         "scenario_version": scenario.version,
         "role_id": session.player_role_id,
+        "narrator": session.narrator,
         "runtime_version": session.runtime_version,
         "lifecycle_status": initialization["lifecycle_status"],
         "token_expires_at": session.capability_expires_at.isoformat(),
@@ -240,6 +251,15 @@ async def list_scenarios():
                 "is_authored": definition is not None,
             })
         return result
+
+
+@router.get("/narrators")
+async def list_narrators():
+    settings = get_settings()
+    async with httpx.AsyncClient(
+        timeout=httpx.Timeout(4.0), trust_env=False
+    ) as client:
+        return await build_narrator_registry(settings, client).public_status()
 
 
 @router.get("/scenarios/{slug}")
@@ -353,6 +373,7 @@ async def create_session(
                         scenario is None
                         or scenario.runtime_version != "v2_ai"
                         or scenario.slug != payload.scenario
+                        or existing.narrator != payload.narrator
                         or expected_role != existing.player_role_id
                         or not hmac.compare_digest(
                             existing.capability_hash, requested_capability_hash
@@ -374,6 +395,11 @@ async def create_session(
             scenario = await get_active_scenario(db, payload.scenario, lock=True)
             if scenario is None:
                 raise HTTPException(status_code=404, detail="Scenario not found")
+            if payload.narrator == GPT6_LUNA_HIGH and scenario.schema_version != 2:
+                raise HTTPException(
+                    status_code=422,
+                    detail="GPT-6 Luna High is only available for schema-v2 scenarios",
+                )
             player_role_id = None
             if scenario.definition is not None:
                 if scenario.schema_version == 1:
@@ -448,12 +474,24 @@ async def create_session(
                         status_code=409,
                         detail="X-Session-Capability is already assigned to another session",
                     )
+            if payload.narrator == GPT6_LUNA_HIGH:
+                settings = get_settings()
+                async with httpx.AsyncClient(
+                    timeout=httpx.Timeout(4.0), trust_env=False
+                ) as client:
+                    registry = build_narrator_registry(settings, client)
+                    if not registry.luna_configured or not await registry.is_ready(GPT6_LUNA_HIGH):
+                        raise HTTPException(
+                            status_code=503,
+                            detail={"code": "NARRATOR_UNAVAILABLE", "narrator": GPT6_LUNA_HIGH},
+                        )
             session = GameSession(
                 id=uuid4(), scenario_version_id=scenario.id,
                 player_role_id=player_role_id,
                 capability_hash=capability_hash,
                 creation_key_hash=creation_key_hash,
                 runtime_version=scenario.runtime_version,
+                narrator=payload.narrator,
                 capability_expires_at=datetime.now(timezone.utc) + CAPABILITY_LIFETIME,
                 turn_number=0,
                 state={} if scenario.schema_version == 2 else dict(scenario.initial_state),
@@ -486,6 +524,7 @@ async def resume_session(session_id: UUID, token: Annotated[str, Depends(require
             "scenario": scenario.slug,
             "scenario_version": scenario.version,
             "runtime_version": session.runtime_version,
+            "narrator": session.narrator,
             "lifecycle_status": initialization["lifecycle_status"],
             "player_role_id": session.player_role_id,
             "initialization_status": initialization["status"],
@@ -923,7 +962,14 @@ async def reflect_session(
                 postgame_context=postgame_context,
                 completion_state=session.state,
             )
-            generation = await generate_reflection(generator, reflection_input)
+            try:
+                selected_generator = select_provider(generator, session.narrator)
+            except NarratorUnavailable as exc:
+                raise HTTPException(
+                    status_code=503,
+                    detail={"code": "NARRATOR_UNAVAILABLE", "narrator": session.narrator},
+                ) from exc
+            generation = await generate_reflection(selected_generator, reflection_input)
             await revalidate_reflection_sources(
                 db=db,
                 session=session,

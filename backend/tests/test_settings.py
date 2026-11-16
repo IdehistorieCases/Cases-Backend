@@ -44,6 +44,17 @@ def test_inference_model_alias_must_not_be_empty():
         Settings(llm_model_alias=" ")
 
 
+def test_luna_bridge_configuration_validates_url_and_strong_shared_secret():
+    assert Settings(_env_file=None).luna_bridge_token == ""
+    assert Settings(luna_bridge_token="x" * 32).luna_model_id == "gpt-6-luna"
+    with pytest.raises(ValidationError, match="luna_bridge_token"):
+        Settings(luna_bridge_token="too-short")
+    with pytest.raises(ValidationError, match="luna_bridge_base_url"):
+        Settings(luna_bridge_base_url="ftp://bridge.invalid")
+    with pytest.raises(ValidationError, match="credentials"):
+        Settings(luna_bridge_base_url="http://user:pass@bridge.invalid")
+
+
 def test_model_specific_reasoning_is_optional_and_configurable(monkeypatch):
     monkeypatch.delenv("LLM_ENABLE_THINKING", raising=False)
     assert Settings(_env_file=None).llm_enable_thinking is None

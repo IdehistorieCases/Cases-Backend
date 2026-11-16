@@ -30,6 +30,7 @@ class InitializationClaim:
     scenario_version_id: UUID
     player_role_id: str | None
     repair_used: bool
+    narrator: str = "local_qwen"
 
 
 class InitializationNotRetryable(ValueError):
@@ -125,6 +126,7 @@ async def claim_next() -> InitializationClaim | None:
             scenario_version_id=session.scenario_version_id,
             player_role_id=session.player_role_id,
             repair_used=job.repair_used,
+            narrator=session.narrator,
         )
 
 
