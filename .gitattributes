@@ -2,3 +2,5 @@
 *.yaml text eol=lf
 *.yml text eol=lf
 /backend/evaluation_data/**/*.jsonl text eol=lf
+/scenarios/**/*.md text eol=lf
+/scenarios/**/*.sha256 text eol=lf
