@@ -6,11 +6,11 @@ x-backend-environment: &backend-environment
   DB_NAME: ${POSTGRES_DB:-ddu_game}
   DB_USER: ${POSTGRES_USER:-ddu_app}
   DB_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in deployment/backend/.env}
-  LLM_BASE_URL: ${LLM_BASE_URL:-http://ddu-llm:8080}
+  INFERENCE_GATEWAY_BASE_URL: ${INFERENCE_GATEWAY_BASE_URL:-http://ddu-gateway:8080}
+  INFERENCE_GATEWAY_TOKEN: ${INFERENCE_GATEWAY_TOKEN-}
   LLM_MODEL_ALIAS: ${LLM_MODEL_ALIAS:-ddu-narrator}
   LLM_COMPLETION_TIMEOUT_SECONDS: ${LLM_COMPLETION_TIMEOUT_SECONDS:-240}
   LLM_ENABLE_THINKING: ${LLM_ENABLE_THINKING-}
-  LUNA_BRIDGE_BASE_URL: ${LUNA_BRIDGE_BASE_URL:-http://host.docker.internal:18765}
   LUNA_MODEL_ID: ${LUNA_MODEL_ID:-gpt-6-luna}
   WORKER_POLL_SECONDS: ${WORKER_POLL_SECONDS:-10}
   WORKER_STALE_SECONDS: ${WORKER_STALE_SECONDS:-45}
@@ -73,11 +73,10 @@ services:
       DB_NAME: ${POSTGRES_DB:-ddu_game}
       DB_USER: ${POSTGRES_USER:-ddu_app}
       DB_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in deployment/backend/.env}
-      LLM_BASE_URL: ${LLM_BASE_URL:-http://ddu-llm:8080}
+      INFERENCE_GATEWAY_BASE_URL: ${INFERENCE_GATEWAY_BASE_URL:-http://ddu-gateway:8080}
+      INFERENCE_GATEWAY_TOKEN: ${INFERENCE_GATEWAY_TOKEN-}
       LLM_MODEL_ALIAS: ${LLM_MODEL_ALIAS:-ddu-narrator}
       LLM_ENABLE_THINKING: ${LLM_ENABLE_THINKING-}
-      LUNA_BRIDGE_BASE_URL: ${LUNA_BRIDGE_BASE_URL:-http://host.docker.internal:18765}
-      LUNA_BRIDGE_TOKEN: ${LUNA_BRIDGE_TOKEN-}
       LUNA_MODEL_ID: ${LUNA_MODEL_ID:-gpt-6-luna}
       WORKER_POLL_SECONDS: ${WORKER_POLL_SECONDS:-10}
       WORKER_STALE_SECONDS: ${WORKER_STALE_SECONDS:-45}
@@ -96,7 +95,6 @@ services:
     restart: unless-stopped
     environment:
       <<: *backend-environment
-      LUNA_BRIDGE_TOKEN: ${LUNA_BRIDGE_TOKEN-}
     depends_on:
       migrate:
         condition: service_completed_successfully

@@ -144,7 +144,7 @@ async def test_generic_structured_output_uses_call_schema_and_records_provider_m
 
 
 @pytest.mark.asyncio
-async def test_codex_bridge_headers_and_provider_provenance_are_explicit():
+async def test_direct_client_keeps_explicit_provider_metadata_compatibility():
     def handler(request):
         assert request.headers["Authorization"] == "Bearer " + "b" * 32
         return httpx.Response(
@@ -159,7 +159,7 @@ async def test_codex_bridge_headers_and_provider_provenance_are_explicit():
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
         result = await InferenceClient(
-            "http://bridge:18765",
+            "http://inference:8080",
             "gpt-6-luna",
             http,
             headers={"Authorization": "Bearer " + "b" * 32},
@@ -176,6 +176,104 @@ async def test_codex_bridge_headers_and_provider_provenance_are_explicit():
     assert result.served_model == "gpt-6-luna"
     assert result.provider == "codex_cli"
     assert result.reasoning_effort == "high"
+
+
+@pytest.mark.asyncio
+async def test_gateway_routed_models_verify_auth_model_and_provider_headers():
+    for model, provider, reasoning in (
+        ("ddu-narrator", "local_qwen", None),
+        ("gpt-6-luna", "codex_cli", "high"),
+    ):
+        def handler(request):
+            assert request.url.host == "ddu-gateway"
+            assert request.headers["Authorization"] == "Bearer " + "g" * 32
+            headers = {"X-Provider-ID": provider}
+            if reasoning:
+                headers["X-Reasoning-Effort"] = reasoning
+            return httpx.Response(
+                200,
+                headers=headers,
+                json={**completion('{"status":"ok"}'), "model": model},
+            )
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            result = await InferenceClient(
+                "http://ddu-gateway:8080",
+                model,
+                http,
+                headers={"Authorization": "Bearer " + "g" * 32},
+                provider_label="codex_cli" if provider == "codex_cli" else "local_qwen",
+                expected_provider=provider,
+                require_provider_header=True,
+            ).generate_structured(
+                system_prompt="system",
+                user_prompt="user",
+                schema_name="test_status",
+                response_schema={"type": "object"},
+                max_tokens=16,
+            )
+        assert result.requested_model == result.served_model == model
+        assert result.provider == provider
+        assert result.reasoning_effort == ("high" if provider == "codex_cli" else None)
+
+
+@pytest.mark.parametrize(
+    ("served_model", "provider_header", "reasoning_header"),
+    [("other-model", "local_qwen", None), ("ddu-narrator", "codex_cli", None)],
+)
+@pytest.mark.asyncio
+async def test_gateway_rejects_model_or_provider_provenance_mismatch(
+    served_model, provider_header, reasoning_header
+):
+    def handler(_request):
+        headers = {"X-Provider-ID": provider_header}
+        if reasoning_header:
+            headers["X-Reasoning-Effort"] = reasoning_header
+        return httpx.Response(
+            200,
+            headers=headers,
+            json={**completion('{"status":"ok"}'), "model": served_model},
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        with pytest.raises(ValueError, match="mismatched"):
+            await InferenceClient(
+                "http://ddu-gateway:8080",
+                "ddu-narrator",
+                http,
+                expected_provider="local_qwen",
+                require_provider_header=True,
+            ).generate_structured(
+                system_prompt="system",
+                user_prompt="user",
+                schema_name="test_status",
+                response_schema={"type": "object"},
+                max_tokens=16,
+            )
+
+
+@pytest.mark.asyncio
+async def test_gateway_routed_client_rejects_missing_provider_or_model_metadata():
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(200, json=completion('{"status":"ok"}'))
+        )
+    ) as http:
+        with pytest.raises(ValueError, match="provider metadata"):
+            await InferenceClient(
+                "http://ddu-gateway:8080",
+                "gpt-6-luna",
+                http,
+                expected_provider="codex_cli",
+                provider_label="codex_cli",
+                require_provider_header=True,
+            ).generate_structured(
+                system_prompt="system",
+                user_prompt="user",
+                schema_name="test_status",
+                response_schema={"type": "object"},
+                max_tokens=16,
+            )
 
 
 @pytest.mark.asyncio

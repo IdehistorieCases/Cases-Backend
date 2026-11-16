@@ -4,15 +4,15 @@ Model serving belongs to [Local-AI-API-LITE](https://github.com/MarcusFunt/Local
 
 ## Network boundary
 
-The backend `api` and `turn-worker` join the explicitly created private Docker bridge `ddu_inference_bus`; PostgreSQL does not. The API uses the bridge for Qwen historical retrieval, and the worker uses it for the optional narrator diagnostic. An evaluation client joins only for an explicitly requested model run. Model services have no host port mappings. This bridge is suitable only for trusted local containers and is not a multi-tenant security boundary.
+The backend `api` and `turn-worker` join the externally created private Docker bridge `ddu_inference_bus`; PostgreSQL does not. CASES sends both narrator models to `http://ddu-gateway:8080` using a dedicated consumer bearer token. The gateway owns provider selection and access to model infrastructure. The API uses the network for Qwen historical retrieval, and the worker uses it for the narrator diagnostic. Model services have no host port mappings. This bridge is suitable only for trusted local containers and is not a multi-tenant security boundary.
 
-For local M2 development, inference is optional: the deterministic fake provider and fake-turn smoke test do not call the model. Configure `LLM_BASE_URL`, `LLM_MODEL_ALIAS`, and `LLM_ENABLE_THINKING` in `deployment/backend/.env` only when running the real diagnostic.
+For local M2 development, inference is optional: the deterministic fake provider and fake-turn smoke test do not call the model. Configure `INFERENCE_GATEWAY_BASE_URL`, `INFERENCE_GATEWAY_TOKEN`, `LLM_MODEL_ALIAS`, and `LLM_ENABLE_THINKING` in `deployment/backend/.env` only when running the real diagnostic. Without the token, both real narrators are unavailable and readiness is false.
 
 ## HTTP contract
 
-The application adapter sends `POST /v1/chat/completions` with its model alias, application-specific messages, strict `json_schema` response format, token and temperature limits, and `stream: false`. `LLM_ENABLE_THINKING` controls the Qwen-specific `chat_template_kwargs: {"enable_thinking": ...}` option.
+The application adapter sends `POST /v1/chat/completions` with its selected model ID, application-specific messages, strict `json_schema` response format, token and temperature limits, and `stream: false`. `LLM_ENABLE_THINKING` controls the Qwen-specific `chat_template_kwargs: {"enable_thinking": ...}` option. The gateway returns only ready and enabled models from `GET /v1/models`, exact served model identity, `X-Provider-ID` provenance, and `X-Reasoning-Effort: high` for Luna. CASES rejects mismatched model or provider metadata and does not fallback between session-pinned narrators.
 
-The adapter checks the health response status, expected served model alias during explicit setup validation, HTTP completion status, completion envelope, finish reason, non-empty content, JSON syntax, and the app-owned Pydantic schema. Empty, truncated, malformed, or schema-invalid output is an error. Prompts and generated responses should not be written to operational logs.
+The adapter checks the health response status, expected enabled model during setup validation, HTTP completion status, response model and provider provenance, completion envelope, finish reason, non-empty content, JSON syntax, and the app-owned Pydantic schema. Empty, truncated, malformed, or schema-invalid output is an error. Prompts and generated responses should not be written to operational logs.
 
 ## Historical retrieval contract
 

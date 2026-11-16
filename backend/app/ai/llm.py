@@ -91,6 +91,8 @@ class InferenceClient:
         enable_thinking: bool | None = None,
         headers: dict[str, str] | None = None,
         provider_label: str = "local_qwen",
+        expected_provider: str | None = None,
+        require_provider_header: bool = False,
     ):
         self.base_url = base_url.rstrip("/")
         self.model_alias = model_alias
@@ -98,6 +100,8 @@ class InferenceClient:
         self.enable_thinking = enable_thinking
         self.headers = headers or {}
         self.provider_label = provider_label
+        self.expected_provider = expected_provider
+        self.require_provider_header = require_provider_header
 
     async def is_ready(self) -> bool:
         try:
@@ -170,6 +174,17 @@ class InferenceClient:
         )
         response.raise_for_status()
         document = response.json()
+        served_model = document.get("model") if isinstance(document, dict) else None
+        if isinstance(served_model, str) and served_model != self.model_alias:
+            raise ValueError("Inference gateway returned a mismatched model")
+        if self.require_provider_header:
+            actual_provider = response.headers.get("x-provider-id")
+            if actual_provider != self.expected_provider:
+                raise ValueError("Inference gateway returned mismatched provider metadata")
+            if self.provider_label == "codex_cli" and response.headers.get(
+                "x-reasoning-effort"
+            ) != "high":
+                raise ValueError("Inference gateway returned mismatched reasoning metadata")
         choices = document.get("choices") if isinstance(document, dict) else None
         if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
             raise ValueError("Completion response did not contain a choice")
@@ -194,8 +209,9 @@ class InferenceClient:
             raise StructuredOutputError("output_not_object", raw_output=raw)
         usage = document.get("usage")
         revision = document.get("model_revision") or document.get("system_fingerprint")
-        served_model = document.get("model")
         request_id = document.get("id") or response.headers.get("x-request-id")
+        if self.require_provider_header and served_model != self.model_alias:
+            raise ValueError("Inference gateway response omitted its served model")
         return StructuredCompletion(
             output=parsed,
             requested_model=self.model_alias,
