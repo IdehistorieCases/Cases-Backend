@@ -131,6 +131,8 @@ def quick_settings():
 
 @pytest.mark.asyncio
 async def test_v2_turn_projects_committed_events_and_survives_reload(turn_harness):
+    from app.runtime.memory import rebuild_session_memory
+
     session = await turn_harness.create_ready_session()
     response = await turn_harness.submit_turn(session, "Undersøg regnskaberne.")
     assert response.status_code == 202, response.text
@@ -190,6 +192,94 @@ async def test_v2_turn_projects_committed_events_and_survives_reload(turn_harnes
         "simulation_event_recorded",
     ]
     assert stored_session.state == result["state"]
+
+    worker_projection = result["state"]
+    assert await rebuild_session_memory(UUID(session["id"])) == worker_projection
+
+    async with session_factory() as db, db.begin():
+        stored_session = await db.get(GameSession, UUID(session["id"]))
+        assert stored_session is not None
+        stored_session.state = {"stale_projection": True}
+
+    assert (
+        await rebuild_session_memory(UUID(session["id"]), persist=True)
+        == worker_projection
+    )
+    async with session_factory() as db:
+        repaired_session = await db.get(GameSession, UUID(session["id"]))
+        assert repaired_session is not None
+        assert repaired_session.state == worker_projection
+
+
+@pytest.mark.asyncio
+async def test_player_completion_is_idempotent_and_blocks_later_turns(turn_harness):
+    session = await turn_harness.create_ready_session()
+    client_turn_id = UUID(int=987654)
+    headers = {
+        "Authorization": f"Bearer {session['token']}",
+        "Idempotency-Key": str(client_turn_id),
+    }
+    payload = {"client_turn_id": str(client_turn_id), "expected_turn": 0}
+    endpoint = f"/api/v1/sessions/{session['id']}/completion"
+
+    completed = await turn_harness.client.post(endpoint, json=payload, headers=headers)
+    assert completed.status_code == 201, completed.text
+    result = completed.json()["result"]
+    assert completed.json()["status"] == "completed"
+    assert result["turn_number"] == 1
+    assert result["scene_status"] == "complete"
+    assert result["state"]["completion_status"] == "complete"
+    assert result["state"]["completion_reason"] == "player_end"
+
+    repeated = await turn_harness.client.post(endpoint, json=payload, headers=headers)
+    assert repeated.status_code == 201
+    assert repeated.json()["request_id"] == completed.json()["request_id"]
+
+    later_turn = await turn_harness.submit_turn(
+        session,
+        "Fortsæt undersøgelsen.",
+        expected_turn=1,
+    )
+    assert later_turn.status_code == 409
+    async with session_factory() as db:
+        committed = (
+            await db.execute(
+                select(CommittedTurn).where(
+                    CommittedTurn.session_id == UUID(session["id"])
+                )
+            )
+        ).scalars().all()
+        events = (
+            await db.execute(
+                select(GameEvent)
+                .join(CommittedTurn, CommittedTurn.id == GameEvent.committed_turn_id)
+                .where(CommittedTurn.session_id == UUID(session["id"]))
+                .order_by(GameEvent.event_index)
+            )
+        ).scalars().all()
+    assert len(committed) == 1
+    assert [(event.event_index, event.event_type) for event in events] == [
+        (0, "player_argument"),
+        (1, "scene_completed"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_player_completion_refuses_to_race_a_pending_turn(turn_harness):
+    session = await turn_harness.create_ready_session()
+    pending = await turn_harness.submit_turn(session, "Undersøg sagen.")
+    completion_id = uuid4()
+    response = await turn_harness.client.post(
+        f"/api/v1/sessions/{session['id']}/completion",
+        json={"client_turn_id": str(completion_id), "expected_turn": 0},
+        headers={
+            "Authorization": f"Bearer {session['token']}",
+            "Idempotency-Key": str(completion_id),
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["request_id"] == pending.json()["request_id"]
 
 
 @pytest.mark.parametrize("truncated_before_tool_plan", [False, True])
@@ -924,6 +1014,8 @@ async def test_transient_failure_allows_one_same_request_retry_cycle(turn_harnes
 
 @pytest.mark.asyncio
 async def test_duplicate_submission_and_provider_retry_create_one_turn(turn_harness):
+    from app.runtime.memory import rebuild_session_memory
+
     session = await turn_harness.create_ready_session()
     client_turn_id = UUID(int=17)
     first = await turn_harness.submit_turn(
@@ -982,3 +1074,7 @@ async def test_duplicate_submission_and_provider_retry_create_one_turn(turn_harn
             )
         ).scalars().all()
         assert len(committed) == 1
+    assert (
+        await rebuild_session_memory(UUID(session["id"]))
+        == completed.json()["result"]["state"]
+    )

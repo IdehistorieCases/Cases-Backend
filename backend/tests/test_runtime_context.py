@@ -492,7 +492,7 @@ async def test_postgame_passages_are_available_only_in_postgame_context():
     historical_reflection = await build_session_context(
         db,
         session,
-        stage="turn",
+        stage="reflection",
         query="sammenligning",
         mode="postgame",
         retrieval_service=rag,

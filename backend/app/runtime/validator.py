@@ -66,6 +66,92 @@ def _state_date(state: dict) -> date | None:
     return parsed if parsed.isoformat() == value else None
 
 
+_PLAYER_END_ACTIONS = {
+    "afslut sagen",
+    "afslut forloebet",
+    "afslut spillet",
+    "afslut sessionen",
+    "jeg afslutter sagen",
+    "jeg afslutter forloebet",
+    "jeg afslutter spillet",
+    "jeg afslutter sessionen",
+    "jeg vil afslutte sagen",
+    "jeg vil afslutte forloebet",
+    "jeg vil afslutte spillet",
+    "jeg vil afslutte sessionen",
+    "jeg vil gerne afslutte sagen",
+    "jeg vil gerne afslutte forloebet",
+    "stop spillet",
+    "stop sessionen",
+    "jeg stopper spillet",
+    "jeg stopper sessionen",
+    "jeg vil stoppe spillet",
+    "jeg vil stoppe sessionen",
+}
+
+
+def _player_requested_end(player_action: str) -> bool:
+    normalized = " ".join(
+        "".join(character if character.isalnum() else " " for character in player_action.casefold()).split()
+    )
+    # Include a transliterated spelling for clients that cannot enter Danish letters.
+    normalized = normalized.replace("ø", "oe").replace("æ", "ae").replace("å", "aa")
+    return normalized in _PLAYER_END_ACTIONS
+
+
+def _completion_reason(
+    *,
+    definition: ScenarioDefinitionV2,
+    current_state: dict,
+    proposal: TurnProposal,
+    player_action: str,
+) -> str | None:
+    policy = definition.completion_policy
+    current_turn = current_state.get("turn_number")
+    if type(current_turn) is not int or current_turn < 0:
+        return None
+    if current_turn + 1 >= policy.max_turns:
+        return "turn_limit"
+    if (
+        policy.mode in {"goal_or_player_end", "player_end"}
+        and _player_requested_end(player_action)
+    ):
+        return "player_end"
+    if policy.mode not in {"goal_or_player_end", "objectives_complete"}:
+        return None
+
+    required_objectives = set(policy.objective_ids) or {
+        objective.id for objective in definition.learning_objectives
+    }
+    observations = current_state.get("learning_observations", [])
+    if not isinstance(observations, list):
+        return None
+    observed_ids = {
+        observation.get("objective_id")
+        for observation in observations
+        if isinstance(observation, dict)
+        and isinstance(observation.get("objective_id"), str)
+    }
+    observed_ids.update(item.objective_id for item in proposal.learning_observations)
+
+    decisions = current_state.get("decisions", [])
+    if not isinstance(decisions, list):
+        return None
+    decision_count = sum(
+        isinstance(item, dict)
+        and item.get("truth_type") == "player_decision"
+        and isinstance(item.get("summary"), str)
+        for item in decisions
+    ) + sum(isinstance(item, RecordDecisionOperation) for item in proposal.state_operations)
+    if (
+        required_objectives
+        and required_objectives.issubset(observed_ids)
+        and decision_count >= policy.min_meaningful_decisions
+    ):
+        return "objectives_complete"
+    return None
+
+
 def _operation_event(
     operation: StateOperation, current_date: date, player_action: str
 ) -> StateEvent:
@@ -156,6 +242,11 @@ def validate_turn_proposal(
         <= definition.metadata.historical_period.end
     ):
         issues.append("invalid_current_state")
+    turn_number = current_state.get("turn_number")
+    if type(turn_number) is not int or turn_number < 0:
+        issues.append("invalid_current_state")
+    if current_state.get("completion_status") == "complete":
+        issues.append("session_already_complete")
     actors = {actor.id for actor in definition.actors}
     if not isinstance(current_state, dict) or current_state.get("runtime_version") != "v2_ai":
         issues.append("invalid_current_state")
@@ -207,9 +298,6 @@ def validate_turn_proposal(
         issues.append("player_claim_mismatch")
     if len({claim.text for claim in proposal.player_claims}) != len(proposal.player_claims):
         issues.append("contradictory_operations")
-    if proposal.scene_status == "complete":
-        issues.append("completion_not_supported")
-
     def check_actor(actor_id: str) -> None:
         if actor_id not in actors:
             issues.append("unknown_actor_id")
@@ -315,8 +403,21 @@ def validate_turn_proposal(
 
     if list(thread_status.values()).count("open") > 100:
         issues.append("proposal_too_large")
+    completion_reason = _completion_reason(
+        definition=definition,
+        current_state=current_state,
+        proposal=proposal,
+        player_action=player_action,
+    )
+    if proposal.scene_status == "complete" and completion_reason is None:
+        issues.append("completion_not_supported")
     if issues:
         raise ProposalValidationError(issues)
+
+    if completion_reason is not None and proposal.scene_status != "complete":
+        proposal = proposal.model_copy(
+            update={"scene_status": "complete", "next_player_prompt": None}
+        )
 
     assert current_date is not None
     assert role is not None
@@ -363,7 +464,12 @@ def validate_turn_proposal(
         for operation in proposal.state_operations
     )
     if proposal.scene_status == "complete":
-        events.append(SceneCompletedEvent(event_type="scene_completed"))
+        events.append(
+            SceneCompletedEvent(
+                event_type="scene_completed",
+                reason=completion_reason or "validated_terminal",
+            )
+        )
     events = tuple(events)
     try:
         project_state(current_state, events)

@@ -294,6 +294,9 @@ class LearningObservationRecordedEvent(LearningObservation):
 
 class SceneCompletedEvent(StrictModel):
     event_type: Literal["scene_completed"]
+    reason: Literal["player_end", "objectives_complete", "turn_limit", "validated_terminal"] = (
+        "validated_terminal"
+    )
 
 
 StateEvent = Annotated[

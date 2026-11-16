@@ -261,6 +261,108 @@ def test_rejects_completion_until_pinned_completion_policy_is_enforced():
     assert "completion_not_supported" in exc.value.issues
 
 
+def test_completes_when_policy_objectives_and_decisions_are_observed():
+    definition, role, context, state, action, raw = fixtures()
+    definition = definition.model_copy(
+        update={
+            "completion_policy": definition.completion_policy.model_copy(
+                update={
+                    "mode": "objectives_complete",
+                    "min_meaningful_decisions": 1,
+                    "objective_ids": ["weigh_evidence"],
+                }
+            )
+        }
+    )
+    accepted = validate(
+        raw,
+        definition=definition,
+        role=role,
+        context=context,
+        state=state,
+        action=action,
+    )
+
+    assert accepted.proposal.scene_status == "complete"
+    assert accepted.proposal.next_player_prompt is None
+    assert accepted.events[-1].event_type == "scene_completed"
+    assert accepted.events[-1].reason == "objectives_complete"
+
+
+def test_turn_limit_completes_even_when_the_model_requests_another_turn():
+    definition, role, context, state, action, raw = fixtures()
+    definition = definition.model_copy(
+        update={
+            "completion_policy": definition.completion_policy.model_copy(
+                update={"max_turns": 2}
+            )
+        }
+    )
+    accepted = validate(
+        raw,
+        definition=definition,
+        role=role,
+        context=context,
+        state=state,
+        action=action,
+    )
+
+    assert accepted.proposal.scene_status == "complete"
+    assert accepted.proposal.next_player_prompt is None
+    assert accepted.events[-1].event_type == "scene_completed"
+    assert accepted.events[-1].reason == "turn_limit"
+
+
+def test_explicit_player_end_completes_a_player_end_scenario():
+    definition, role, context, state, _, raw = fixtures()
+    definition = definition.model_copy(
+        update={
+            "completion_policy": definition.completion_policy.model_copy(
+                update={"mode": "player_end"}
+            )
+        }
+    )
+    raw["player_claims"] = []
+    accepted = validate(
+        raw,
+        definition=definition,
+        role=role,
+        context=context,
+        state=state,
+        action="Afslut sagen.",
+    )
+
+    assert accepted.proposal.scene_status == "complete"
+    assert accepted.proposal.next_player_prompt is None
+    assert accepted.events[-1].event_type == "scene_completed"
+    assert accepted.events[-1].reason == "player_end"
+
+
+@pytest.mark.parametrize("action", ["Stop!", "Jeg stopper", "Afslut"])
+def test_in_character_or_ambiguous_stop_does_not_end_player_end_scenario(action):
+    definition, role, context, state, _, raw = fixtures()
+    definition = definition.model_copy(
+        update={
+            "completion_policy": definition.completion_policy.model_copy(
+                update={"mode": "player_end"}
+            )
+        }
+    )
+    raw["player_claims"] = []
+
+    accepted = validate(
+        raw,
+        definition=definition,
+        role=role,
+        context=context,
+        state=state,
+        action=action,
+    )
+
+    assert accepted.proposal.scene_status == "continue"
+    assert not any(event.event_type == "scene_completed" for event in accepted.events)
+
+
 def test_rejects_duplicate_threads_relations_and_multiple_time_advances():
     definition, role, context, state, action, raw = fixtures()
     bad = deepcopy(raw)

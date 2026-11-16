@@ -3,7 +3,7 @@ import hashlib
 import hmac
 import re
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Annotated, Literal
 from uuid import UUID, uuid4
 
@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.connection import session_factory
 from app.db.models import (
     CommittedTurn,
+    GameEvent,
     GameSession,
     ScenarioVersion,
     SessionInitializationJob,
@@ -28,6 +29,26 @@ from app.game.initialization import (
     get_session_job,
     request_retry,
 )
+from app.runtime.context import (
+    ContextBudget,
+    ContextBuildFailure,
+    SessionPromptContext,
+    build_session_context,
+)
+from app.runtime.proposals import SceneCompletedEvent
+from app.runtime.reflection import (
+    ReflectionBuildError,
+    ReflectionGenerationError,
+    build_reflection_input,
+    build_reflection_search_query,
+    generate_reflection,
+    get_reflection_generator,
+    get_reflection_retrieval_service,
+    public_reflection_result,
+    revalidate_reflection_sources,
+    validate_reflection_events,
+)
+from app.runtime.state import project_state
 from app.scenarios.cli import scenario_readiness_report
 from app.scenarios.repository import get_active_scenario
 from app.scenarios.runtime_compatibility import (
@@ -64,6 +85,12 @@ class SubmitTurn(BaseModel):
         if not value.strip():
             raise ValueError("text must not be blank")
         return value
+
+
+class CompleteSession(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    client_turn_id: UUID
+    expected_turn: int = Field(ge=0)
 
 
 def require_token(
@@ -536,6 +563,8 @@ async def submit_turn(
                     status_code=409,
                     detail="Legacy sessions are read-only and do not accept new turns",
                 )
+            if session.state.get("completion_status") == "complete":
+                raise HTTPException(status_code=409, detail="Session is already complete")
             try:
                 require_runtime_compatible(scenario)
             except ScenarioRuntimeIncompatible as exc:
@@ -557,6 +586,366 @@ async def submit_turn(
             db.add(turn)
             response.headers["Location"] = f"/api/v1/turn-requests/{turn.id}"
             return public_request(turn)
+
+
+@router.post("/sessions/{session_id}/completion", status_code=201)
+async def complete_session(
+    session_id: UUID,
+    payload: CompleteSession,
+    response: Response,
+    token: Annotated[str, Depends(require_token)],
+    idempotency_key: Annotated[UUID, Header(alias="Idempotency-Key")],
+):
+    if idempotency_key != payload.client_turn_id:
+        raise HTTPException(status_code=400, detail="Idempotency key must match client_turn_id")
+    player_action = "Afslut sagen."
+    async with session_factory() as db, db.begin():
+        session = await owned_session(db, session_id, token, lock=True)
+        existing = (
+            await db.execute(
+                select(TurnRequest).where(
+                    TurnRequest.session_id == session.id,
+                    TurnRequest.client_turn_id == payload.client_turn_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if existing is not None:
+            if (
+                existing.expected_turn != payload.expected_turn
+                or existing.text != player_action
+                or existing.input_language != "da"
+            ):
+                raise HTTPException(status_code=409, detail="Idempotency key already used")
+            committed = (
+                await db.execute(
+                    select(CommittedTurn).where(CommittedTurn.request_id == existing.id)
+                )
+            ).scalar_one_or_none()
+            if (
+                committed is None
+                or not isinstance(committed.result, dict)
+                or committed.result.get("completion_reason") != "player_end"
+            ):
+                raise HTTPException(status_code=409, detail="Idempotency key already used")
+            response.headers["Location"] = f"/api/v1/turn-requests/{existing.id}"
+            return {**public_request(existing), "result": committed.result}
+
+        if session.runtime_version != "v2_ai":
+            raise HTTPException(status_code=409, detail="Only schema-v2 sessions can be completed")
+        if session.state.get("completion_status") == "complete":
+            raise HTTPException(status_code=409, detail="Session is already complete")
+        initialization = await get_session_job(db, session.id)
+        if initialization is None or initialization.status != "ready":
+            raise HTTPException(status_code=409, detail="Session initialization is not ready")
+        scenario = await db.get(ScenarioVersion, session.scenario_version_id)
+        if scenario is None or scenario.schema_version != 2 or scenario.definition is None:
+            raise HTTPException(status_code=409, detail="Pinned schema-v2 scenario is unavailable")
+        try:
+            definition = ScenarioDefinitionV2.model_validate(scenario.definition)
+            validate_v2_definition(definition)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail="Pinned scenario definition is invalid") from exc
+        if definition.completion_policy.mode not in {"goal_or_player_end", "player_end"}:
+            raise HTTPException(
+                status_code=409,
+                detail="The pinned completion policy requires its objectives to be completed",
+            )
+        pending = (
+            await db.execute(
+                select(TurnRequest).where(
+                    TurnRequest.session_id == session.id,
+                    TurnRequest.status.in_(ACTIVE_STATUSES),
+                )
+            )
+        ).scalar_one_or_none()
+        if pending is not None:
+            raise HTTPException(
+                status_code=409,
+                detail={"message": "A turn is already in progress", "request_id": str(pending.id)},
+            )
+        if payload.expected_turn != session.turn_number:
+            raise HTTPException(status_code=409, detail="Expected turn does not match session")
+
+        turn_number = session.turn_number + 1
+        event = SceneCompletedEvent(event_type="scene_completed", reason="player_end")
+        state = project_state(session.state, [event])
+        state["turn_number"] = turn_number
+        state["last_turn_number"] = turn_number
+        event_result = event.model_dump(mode="json")
+        result = {
+            "turn_number": turn_number,
+            "player_text": player_action,
+            "reply": "Forløbet afsluttes efter dit ønske.",
+            "dialogue": [],
+            "outcome_summary": "Spilleren afsluttede forløbet.",
+            "next_player_prompt": None,
+            "scene_status": "complete",
+            "completion_reason": "player_end",
+            "provider": "player-requested-completion",
+            "scenario_version_id": str(session.scenario_version_id),
+            "scenario_version": scenario.version,
+            "events": [event_result],
+            "state": state,
+        }
+        turn = TurnRequest(
+            id=uuid4(),
+            session_id=session.id,
+            client_turn_id=payload.client_turn_id,
+            expected_turn=session.turn_number,
+            text=player_action,
+            input_language="da",
+            status="completed",
+        )
+        db.add(turn)
+        await db.flush()
+        committed = CommittedTurn(
+            id=uuid4(),
+            session_id=session.id,
+            request_id=turn.id,
+            turn_number=turn_number,
+            result=result,
+        )
+        db.add(committed)
+        await db.flush()
+        db.add_all(
+            [
+                GameEvent(
+                    id=uuid4(),
+                    committed_turn_id=committed.id,
+                    event_index=0,
+                    event_type="player_argument",
+                    payload={"text": player_action},
+                ),
+                GameEvent(
+                    id=uuid4(),
+                    committed_turn_id=committed.id,
+                    event_index=1,
+                    event_type="scene_completed",
+                    payload={"reason": "player_end"},
+                ),
+            ]
+        )
+        session.turn_number = turn_number
+        session.state = state
+        response.headers["Location"] = f"/api/v1/turn-requests/{turn.id}"
+        return {**public_request(turn), "result": result}
+
+
+def _reflection_turn_manifest_query(session_id: UUID):
+    """Fetch only per-turn integrity fields, never the cumulative state snapshot."""
+    return (
+        select(
+            CommittedTurn.turn_number,
+            CommittedTurn.result["events"].label("event_manifest"),
+            CommittedTurn.result["turn_number"].as_integer().label("result_turn_number"),
+            CommittedTurn.result["scenario_version_id"]
+            .as_string()
+            .label("result_scenario_version_id"),
+            CommittedTurn.result["player_text"].as_string().label("result_player_text"),
+            TurnRequest.session_id,
+            TurnRequest.expected_turn,
+            TurnRequest.text.label("request_text"),
+            TurnRequest.status.label("request_status"),
+        )
+        .select_from(CommittedTurn)
+        .join(TurnRequest, TurnRequest.id == CommittedTurn.request_id)
+        .where(CommittedTurn.session_id == session_id)
+        .order_by(CommittedTurn.turn_number)
+    )
+
+
+@router.post("/sessions/{session_id}/reflection")
+async def reflect_session(
+    session_id: UUID,
+    token: Annotated[str, Depends(require_token)],
+    generator=Depends(get_reflection_generator),
+    retrieval_service=Depends(get_reflection_retrieval_service),
+):
+    async with session_factory() as db:
+        session = await owned_session(db, session_id, token)
+        if session.runtime_version != "v2_ai":
+            raise HTTPException(status_code=409, detail="Only schema-v2 sessions support reflection")
+        if session.state.get("completion_status") != "complete":
+            raise HTTPException(status_code=409, detail="Session must be complete before reflection")
+
+        scenario = await db.get(ScenarioVersion, session.scenario_version_id)
+        if scenario is None or scenario.schema_version != 2 or not isinstance(scenario.definition, dict):
+            raise HTTPException(status_code=409, detail="Pinned schema-v2 scenario is unavailable")
+        try:
+            definition = ScenarioDefinitionV2.model_validate(scenario.definition)
+            validate_v2_definition(definition)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail="Pinned scenario definition is invalid") from exc
+        if definition.slug != scenario.slug or definition.version != scenario.version:
+            raise HTTPException(status_code=409, detail="Pinned scenario identity is invalid")
+
+        turn_rows = (
+            await db.execute(_reflection_turn_manifest_query(session.id))
+        ).all()
+        committed_turns: dict[int, dict] = {}
+        for row in turn_rows:
+            turn_number = row.turn_number
+            if (
+                row.session_id != session.id
+                or row.expected_turn != turn_number - 1
+                or row.request_status != "completed"
+                or row.result_turn_number != turn_number
+                or row.result_scenario_version_id != str(session.scenario_version_id)
+                or row.result_player_text != row.request_text
+                or not isinstance(row.request_text, str)
+            ):
+                raise HTTPException(status_code=409, detail="Committed reflection turn identity is invalid")
+            committed_turns[turn_number] = {
+                "manifest": row.event_manifest,
+                "player_action": row.request_text,
+                "events": [],
+            }
+        if sorted(committed_turns) != list(range(1, session.turn_number + 1)):
+            raise HTTPException(status_code=409, detail="Committed reflection history is incomplete")
+
+        event_rows = (
+            await db.execute(
+                select(
+                    CommittedTurn.turn_number,
+                    GameEvent.event_index,
+                    GameEvent.event_type,
+                    GameEvent.payload,
+                )
+                .select_from(CommittedTurn)
+                .join(GameEvent, GameEvent.committed_turn_id == CommittedTurn.id)
+                .where(CommittedTurn.session_id == session.id)
+                .order_by(CommittedTurn.turn_number, GameEvent.event_index)
+            )
+        ).all()
+        for turn_number, event_index, event_type, payload in event_rows:
+            committed_turns[turn_number]["events"].append(
+                {
+                    "turn_number": turn_number,
+                    "event_index": event_index,
+                    "event_type": event_type,
+                    "payload": payload,
+                }
+            )
+
+        events = []
+        player_actions_by_turn = {}
+        for turn_number, entry in committed_turns.items():
+            turn_events = entry["events"]
+            manifest = entry["manifest"]
+            if (
+                not isinstance(manifest, list)
+                or any(
+                    not isinstance(item, dict) or not isinstance(item.get("event_type"), str)
+                    for item in manifest
+                )
+                or len(turn_events) != len(manifest) + 1
+                or [item["event_index"] for item in turn_events]
+                != list(range(len(turn_events)))
+            ):
+                raise HTTPException(status_code=409, detail="Committed reflection history is incomplete")
+            events.extend(turn_events)
+            player_actions_by_turn[turn_number] = entry["player_action"]
+        role = next(
+            (item for item in definition.roles if item.id == session.player_role_id), None
+        )
+        if role is None:
+            raise HTTPException(status_code=409, detail="Pinned player role is unavailable")
+        try:
+            validate_reflection_events(
+                events,
+                player_actions_by_turn=player_actions_by_turn,
+                expected_actor_id=role.actor_id,
+            )
+        except ReflectionBuildError as exc:
+            raise HTTPException(status_code=409, detail="Committed reflection events are invalid") from exc
+        completion_events = [
+            event
+            for event in events
+            if event["event_type"] == "scene_completed"
+        ]
+        completion_reason = session.state.get("completion_reason")
+        if (
+            not completion_events
+            or len(completion_events) != 1
+            or completion_events[0]["payload"].get("reason") != completion_reason
+            or completion_events[0] != events[-1]
+        ):
+            raise HTTPException(status_code=409, detail="Committed completion history is unavailable")
+
+        query = build_reflection_search_query(definition, events)
+        try:
+            postgame_context = await build_session_context(
+                db,
+                session,
+                stage="reflection",
+                mode="postgame",
+                query=query,
+                retrieval_service=retrieval_service,
+                budget=ContextBudget(max_chars=12_000, top_k=5),
+                release_transaction_before_retrieval=True,
+            )
+        except ContextBuildFailure as exc:
+            if exc.status != "retrieval_failure":
+                status_code = 503 if exc.status == "database_failure" else 409
+                raise HTTPException(
+                    status_code=status_code,
+                    detail="Pinned postgame context is unavailable",
+                ) from exc
+            try:
+                world_date = date.fromisoformat(session.state["world_date"])
+            except (KeyError, TypeError, ValueError) as date_exc:
+                raise HTTPException(
+                    status_code=409, detail="Pinned postgame context is invalid"
+                ) from date_exc
+            postgame_context = SessionPromptContext(
+                payload={
+                    "pinned_scenario": {
+                        "slug": scenario.slug,
+                        "version": scenario.version,
+                        "schema_version": 2,
+                        "release_id": str(scenario.id),
+                    },
+                    "generation_mode": "postgame",
+                    "evidence": {"status": "retrieval_failure", "passages": []},
+                },
+                world_date=world_date,
+                evidence_status="retrieval_failure",
+                serialized_chars=0,
+                stage="reflection",
+                mode="postgame",
+                metadata={"evidence": {"status": "retrieval_failure"}},
+            )
+
+        try:
+            reflection_input = build_reflection_input(
+                definition=definition,
+                events=events,
+                postgame_context=postgame_context,
+                completion_state=session.state,
+            )
+            generation = await generate_reflection(generator, reflection_input)
+            await revalidate_reflection_sources(
+                db=db,
+                session=session,
+                definition=definition,
+                events=events,
+                retrieval_service=retrieval_service,
+                reflection_input=reflection_input,
+                generation=generation,
+            )
+            return public_reflection_result(generation, reflection_input)
+        except ReflectionBuildError as exc:
+            raise HTTPException(status_code=409, detail="Committed reflection history is invalid") from exc
+        except ReflectionGenerationError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail={"code": "REFLECTION_UNAVAILABLE", "message": "Refleksionen er midlertidigt utilgængelig."},
+            ) from exc
+        except ContextBuildFailure as exc:
+            raise HTTPException(
+                status_code=503,
+                detail={"code": "REFLECTION_UNAVAILABLE", "message": "Refleksionen er midlertidigt utilgængelig."},
+            ) from exc
 
 
 @router.get("/turn-requests/{request_id}")
