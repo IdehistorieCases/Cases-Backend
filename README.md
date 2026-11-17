@@ -43,7 +43,7 @@ Do not use `docker compose down -v` for routine shutdown; it can remove the Post
 
 ## Optional external model diagnostic
 
-For a real vLLM endpoint, start and validate [Local-AI-API-LITE](https://github.com/MarcusFunt/Local-AI-API-LITE) using its own runbook. Configure the backend `.env` with the trusted private `LLM_BASE_URL`, `LLM_MODEL_ALIAS`, and `LLM_ENABLE_THINKING` values. The default network URL is `http://ddu-llm:8080`, alias `ddu-narrator`; only the backend worker calls that LLM endpoint. The API also joins the same private network for the separate `ddu-embed` RAG endpoint.
+For real narrator inference, start and validate [Local-AI-API-LITE](https://github.com/MarcusFunt/Local-AI-API-LITE) and its unified gateway using that repository's runbook. Configure `INFERENCE_GATEWAY_BASE_URL`, the CASES-only `INFERENCE_GATEWAY_TOKEN`, `LLM_MODEL_ALIAS`, and `LLM_ENABLE_THINKING` in the backend `.env`. The default gateway is `http://ddu-gateway:8080`; Qwen uses `ddu-narrator` and the optional session-pinned Luna model uses `gpt-6-luna`. CASES holds no bridge token or Codex endpoint. The API also joins the private network for the separate `ddu-embed` RAG endpoint.
 
 Run a gameplay smoke only against a disposable database that already has the selected v2 scenario release active. Set `CASES_ISOLATED_SMOKE=1` and `CASES_SMOKE_DB_NAME` to that database's name:
 

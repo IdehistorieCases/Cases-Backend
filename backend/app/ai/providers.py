@@ -24,21 +24,26 @@ def select_provider(generator, narrator: str):
 
 
 class NarratorRegistry:
-    def __init__(self, providers: dict[str, InferenceClient], *, luna_configured: bool):
+    def __init__(self, providers: dict[str, InferenceClient], *, gateway_configured: bool):
         self.providers = providers
-        self.luna_configured = luna_configured
+        self.gateway_configured = gateway_configured
+
+    @property
+    def luna_configured(self) -> bool:
+        """The Luna route is configured when CASES has its gateway client token."""
+        return self.gateway_configured
 
     def require_configured(self, narrator: str) -> InferenceClient:
         if narrator not in self.providers:
             raise ValueError("unknown narrator selection")
-        if narrator == GPT6_LUNA_HIGH and not self.luna_configured:
+        if not self.gateway_configured:
             raise ValueError("selected narrator is unavailable")
         return self.providers[narrator]
 
     async def is_ready(self, narrator: str) -> bool:
         if narrator not in self.providers:
             return False
-        if narrator == GPT6_LUNA_HIGH and not self.luna_configured:
+        if not self.gateway_configured:
             return False
         provider = self.providers[narrator]
         return await provider.is_ready() and await provider.serves_expected_model()
@@ -52,7 +57,7 @@ class NarratorRegistry:
                 "name": "Local Qwen",
                 "model": local.model_alias,
                 "default": True,
-                "configured": True,
+                "configured": self.gateway_configured,
                 "ready": await self.is_ready(LOCAL_QWEN),
             },
             {
@@ -61,7 +66,7 @@ class NarratorRegistry:
                 "model": luna.model_alias,
                 "reasoning_effort": "high",
                 "default": False,
-                "configured": self.luna_configured,
+                "configured": self.gateway_configured,
                 "ready": await self.is_ready(GPT6_LUNA_HIGH),
             },
         ]
@@ -84,26 +89,32 @@ class NarratorRegistry:
 
 
 def build_narrator_registry(settings: Settings, client) -> NarratorRegistry:
+    headers = (
+        {"Authorization": f"Bearer {settings.inference_gateway_token}"}
+        if settings.inference_gateway_token
+        else {}
+    )
     return NarratorRegistry(
         {
             LOCAL_QWEN: InferenceClient(
-                settings.llm_base_url,
+                settings.inference_gateway_base_url,
                 settings.llm_model_alias,
                 client,
+                headers=headers,
                 enable_thinking=settings.llm_enable_thinking,
                 provider_label=LOCAL_QWEN,
+                expected_provider="local_qwen",
+                require_provider_header=True,
             ),
             GPT6_LUNA_HIGH: InferenceClient(
-                settings.luna_bridge_base_url,
+                settings.inference_gateway_base_url,
                 settings.luna_model_id,
                 client,
-                headers=(
-                    {"Authorization": f"Bearer {settings.luna_bridge_token}"}
-                    if settings.luna_bridge_token
-                    else {}
-                ),
+                headers=headers,
                 provider_label="codex_cli",
+                expected_provider="codex_cli",
+                require_provider_header=True,
             ),
         },
-        luna_configured=bool(settings.luna_bridge_token),
+        gateway_configured=bool(settings.inference_gateway_token),
     )

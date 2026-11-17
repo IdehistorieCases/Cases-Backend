@@ -14,9 +14,14 @@ async def main() -> int:
     settings = get_settings()
     async with httpx.AsyncClient(timeout=httpx.Timeout(120.0), trust_env=False) as client:
         llm = InferenceClient(
-            settings.llm_base_url,
+            settings.inference_gateway_base_url,
             settings.llm_model_alias,
             client,
+            headers=(
+                {"Authorization": f"Bearer {settings.inference_gateway_token}"}
+                if settings.inference_gateway_token
+                else {}
+            ),
             enable_thinking=settings.llm_enable_thinking,
         )
         if not await llm.is_ready():

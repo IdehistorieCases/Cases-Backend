@@ -30,13 +30,13 @@ def test_stale_threshold_accepts_margin_after_health_timeout():
 
 @pytest.mark.parametrize("base_url", ["", "   ", "ftp://llm:8080", "//llm:8080", "http://"])
 def test_inference_url_must_be_a_nonempty_http_url(base_url):
-    with pytest.raises(ValidationError, match="llm_base_url"):
-        Settings(llm_base_url=base_url)
+    with pytest.raises(ValidationError, match="inference_gateway_base_url"):
+        Settings(inference_gateway_base_url=base_url)
 
 
 def test_inference_url_rejects_embedded_credentials():
     with pytest.raises(ValidationError, match="credentials"):
-        Settings(llm_base_url="http://user:password@llm:8080")
+        Settings(inference_gateway_base_url="http://user:password@llm:8080")
 
 
 def test_inference_model_alias_must_not_be_empty():
@@ -44,15 +44,15 @@ def test_inference_model_alias_must_not_be_empty():
         Settings(llm_model_alias=" ")
 
 
-def test_luna_bridge_configuration_validates_url_and_strong_shared_secret():
-    assert Settings(_env_file=None).luna_bridge_token == ""
-    assert Settings(luna_bridge_token="x" * 32).luna_model_id == "gpt-6-luna"
-    with pytest.raises(ValidationError, match="luna_bridge_token"):
-        Settings(luna_bridge_token="too-short")
-    with pytest.raises(ValidationError, match="luna_bridge_base_url"):
-        Settings(luna_bridge_base_url="ftp://bridge.invalid")
+def test_gateway_configuration_validates_url_and_consumer_token():
+    assert Settings(_env_file=None).inference_gateway_token == ""
+    assert Settings(inference_gateway_token="x" * 32).luna_model_id == "gpt-6-luna"
+    with pytest.raises(ValidationError, match="inference_gateway_token"):
+        Settings(inference_gateway_token="too-short")
+    with pytest.raises(ValidationError, match="inference_gateway_base_url"):
+        Settings(inference_gateway_base_url="ftp://gateway.invalid")
     with pytest.raises(ValidationError, match="credentials"):
-        Settings(luna_bridge_base_url="http://user:pass@bridge.invalid")
+        Settings(inference_gateway_base_url="http://user:pass@gateway.invalid")
 
 
 def test_model_specific_reasoning_is_optional_and_configurable(monkeypatch):

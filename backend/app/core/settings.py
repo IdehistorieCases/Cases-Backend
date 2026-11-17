@@ -18,14 +18,13 @@ class Settings(BaseSettings):
     db_name: str = "ddu_game"
     db_user: str = "ddu_app"
     db_password: str = ""
-    llm_base_url: str = Field(default="http://ddu-llm:8080", min_length=1, max_length=2048)
+    inference_gateway_base_url: str = Field(
+        default="http://ddu-gateway:8080", min_length=1, max_length=2048
+    )
+    inference_gateway_token: str = Field(default="", max_length=512, repr=False)
     llm_model_alias: str = Field(default="ddu-narrator", min_length=1, max_length=128)
     llm_enable_thinking: bool | None = None
     llm_completion_timeout_seconds: float = Field(default=240.0, ge=1.0, le=600.0)
-    luna_bridge_base_url: str = Field(
-        default="http://host.docker.internal:18765", min_length=1, max_length=2048
-    )
-    luna_bridge_token: str = Field(default="", max_length=512, repr=False)
     luna_model_id: str = Field(default="gpt-6-luna", min_length=1, max_length=128)
     rag_embed_base_url: str = Field(default="http://ddu-embed:8080", min_length=1, max_length=2048)
     rag_embed_model_id: str = Field(
@@ -58,20 +57,28 @@ class Settings(BaseSettings):
     turn_inference_timeout_seconds: float = Field(default=220.0, ge=1.0, le=600.0)
     turn_total_timeout_seconds: float = Field(default=1380.0, ge=2.0, le=1800.0)
 
-    @field_validator("llm_base_url")
+    @field_validator("inference_gateway_base_url")
     @classmethod
-    def validate_llm_base_url(cls, value: str) -> str:
+    def validate_inference_gateway_base_url(cls, value: str) -> str:
         value = value.strip()
         try:
             parsed = urlsplit(value)
             parsed.port  # Accessing port validates its syntax and range.
         except ValueError as error:
-            raise ValueError("llm_base_url must be a valid HTTP(S) URL") from error
+            raise ValueError("inference_gateway_base_url must be a valid HTTP(S) URL") from error
         if parsed.scheme not in {"http", "https"} or not parsed.hostname:
-            raise ValueError("llm_base_url must use HTTP or HTTPS and include a host")
+            raise ValueError("inference_gateway_base_url must use HTTP or HTTPS and include a host")
         if parsed.username is not None or parsed.password is not None:
-            raise ValueError("llm_base_url must not include credentials")
+            raise ValueError("inference_gateway_base_url must not include credentials")
         return value.rstrip("/")
+
+    @field_validator("inference_gateway_token")
+    @classmethod
+    def validate_inference_gateway_token(cls, value: str) -> str:
+        value = value.strip()
+        if value and len(value) < 24:
+            raise ValueError("inference_gateway_token must be at least 24 characters when configured")
+        return value
 
     @field_validator("llm_model_alias")
     @classmethod
@@ -79,19 +86,6 @@ class Settings(BaseSettings):
         value = value.strip()
         if not value:
             raise ValueError("llm_model_alias must not be empty")
-        return value
-
-    @field_validator("luna_bridge_base_url")
-    @classmethod
-    def validate_luna_bridge_base_url(cls, value: str) -> str:
-        return cls._validated_service_url(value, "luna_bridge_base_url")
-
-    @field_validator("luna_bridge_token")
-    @classmethod
-    def validate_luna_bridge_token(cls, value: str) -> str:
-        value = value.strip()
-        if value and len(value) < 24:
-            raise ValueError("luna_bridge_token must be at least 24 characters when configured")
         return value
 
     @field_validator("luna_model_id")
