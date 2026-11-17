@@ -22,6 +22,7 @@ def test_registry_routes_both_models_to_same_gateway_with_same_consumer_token():
     settings = Settings(_env_file=None, inference_gateway_token="x" * 32)
     registry = build_narrator_registry(settings, object())
 
+    assert registry.luna_configured is True
     assert set(registry.providers) == {"local_qwen", "gpt6_luna_high"}
     assert registry.public_configuration() == [
         {"id": "local_qwen", "name": "Local Qwen", "model": settings.llm_model_alias, "default": True},
@@ -49,6 +50,7 @@ async def test_narrator_selection_fails_closed_without_gateway_token():
     # Readiness is asynchronous; provider resolution never silently routes to Qwen.
     assert registry.require_configured("gpt6_luna_high").model_alias == "gpt-6-luna"
     unconfigured = build_narrator_registry(Settings(_env_file=None, inference_gateway_token=""), client)
+    assert unconfigured.luna_configured is False
     with pytest.raises(ValueError, match="unavailable"):
         unconfigured.require_configured("gpt6_luna_high")
     with pytest.raises(ValueError, match="unavailable"):

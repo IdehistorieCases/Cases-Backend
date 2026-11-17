@@ -1,6 +1,6 @@
 # External inference client contract
 
-Model serving belongs to [Local-AI-API-LITE](https://github.com/MarcusFunt/Local-AI-API-LITE), a separate repository that owns the vLLM and retrieval containers, pinned model revisions, model cache, resource limits, benchmarks, and inference lifecycle. This repository owns only the application client adapters, requests, response validation, and credentials. Narration inference is a proposal source; application code remains responsible for authoritative game state.
+Model serving belongs to [Local-AI-API-LITE](https://github.com/MarcusFunt/Local-AI-API-LITE), a separate repository that owns the vLLM and retrieval containers, pinned model revisions, model cache, resource limits, benchmarks, and inference lifecycle. This repository owns the application client adapters, requests, response validation, and its gateway consumer token. Provider and Codex credentials stay with Local-AI-API-LITE. Narration inference is a proposal source; application code remains responsible for authoritative game state.
 
 ## Network boundary
 

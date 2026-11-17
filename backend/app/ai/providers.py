@@ -28,6 +28,11 @@ class NarratorRegistry:
         self.providers = providers
         self.gateway_configured = gateway_configured
 
+    @property
+    def luna_configured(self) -> bool:
+        """The Luna route is configured when CASES has its gateway client token."""
+        return self.gateway_configured
+
     def require_configured(self, narrator: str) -> InferenceClient:
         if narrator not in self.providers:
             raise ValueError("unknown narrator selection")
