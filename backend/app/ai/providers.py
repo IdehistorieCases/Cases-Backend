@@ -11,6 +11,13 @@ class NarratorUnavailable(RuntimeError):
     """A requested provider cannot service this session; callers must not fallback."""
 
 
+def resolve_thinking_option(narrator: str, configured: bool | None, *, force_disabled=False):
+    """Resolve the local Qwen template option without sending it to cloud providers."""
+    if narrator != LOCAL_QWEN:
+        return None
+    return False if force_disabled else configured
+
+
 def select_provider(generator, narrator: str):
     """Resolve a pinned provider; legacy single-client callers remain Qwen-only."""
     if isinstance(generator, NarratorRegistry):

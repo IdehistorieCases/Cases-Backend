@@ -606,6 +606,16 @@ async def test_reflection_output_is_qualitative_and_cites_only_current_postgame_
     assert [source["passage_id"] for source in public["sources"]] == [PASSAGE_ID]
     assert generator.calls[0]["schema_name"] == reflection.REFLECTION_SCHEMA_NAME
     assert "historical_evidence_ids" in generator.calls[0]["response_schema"]["properties"]
+    objective_ids = [item["id"] for item in input_data["objectives"]]
+    objective_feedback_schema = generator.calls[0]["response_schema"]["properties"][
+        "objective_feedback"
+    ]
+    assert objective_feedback_schema["minItems"] == len(objective_ids)
+    assert objective_feedback_schema["maxItems"] == len(objective_ids)
+    assert generator.calls[0]["response_schema"]["$defs"]["ObjectiveReflection"][
+        "properties"
+    ]["objective_id"]["enum"] == objective_ids
+    assert ", ".join(objective_ids) in generator.calls[0]["user_prompt"]
 
 
 @pytest.mark.asyncio

@@ -324,6 +324,31 @@ async def test_structured_output_can_disable_model_thinking_for_json_reliability
 
 
 @pytest.mark.asyncio
+async def test_cloud_provider_omits_local_chat_template_options():
+    def handler(request):
+        body = json.loads(request.content)
+        assert "chat_template_kwargs" not in body
+        return httpx.Response(200, json=completion('{"status":"ok"}'))
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        result = await InferenceClient(
+            "http://gateway:8080",
+            "gpt-6-luna",
+            http,
+            provider_label="codex_cli",
+        ).generate_structured(
+            system_prompt="system",
+            user_prompt="user",
+            schema_name="test_status",
+            response_schema={"type": "object"},
+            max_tokens=16,
+            enable_thinking=False,
+        )
+
+    assert result.output == {"status": "ok"}
+
+
+@pytest.mark.asyncio
 async def test_empty_length_limited_completion_is_classified_as_truncated():
     async with httpx.AsyncClient(
         transport=httpx.MockTransport(

@@ -162,11 +162,11 @@ class InferenceClient:
                 },
             },
         }
-        # This option is template-specific; omit it unless the operator explicitly configures it.
+        # This option belongs to the local Qwen chat template, not cloud providers.
         resolved_thinking = (
             self.enable_thinking if enable_thinking is None else enable_thinking
         )
-        if resolved_thinking is not None:
+        if self.provider_label == "local_qwen" and resolved_thinking is not None:
             body["chat_template_kwargs"] = {"enable_thinking": resolved_thinking}
         started = perf_counter()
         response = await self.client.post(

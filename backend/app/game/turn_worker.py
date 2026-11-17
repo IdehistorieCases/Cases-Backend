@@ -302,6 +302,8 @@ async def record_attempt_metadata(claim: Claim, metadata: dict) -> bool:
         "duration_ms",
         "outcome",
         "failure_code",
+        "error_type",
+        "error_status",
         "validation_codes",
         "output_sha256",
         "prompt_sha256",
