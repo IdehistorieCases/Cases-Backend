@@ -74,6 +74,10 @@ class ReflectionBuildError(ValueError):
 class ReflectionGenerationError(ValueError):
     """The reflection provider returned an invalid or unsupported response."""
 
+    def __init__(self, message: str, *, diagnostic_code: str | None = None):
+        super().__init__(message)
+        self.diagnostic_code = diagnostic_code
+
 
 class ObjectiveReflection(StrictModel):
     objective_id: Id
@@ -406,23 +410,64 @@ def build_reflection_input(
     }
 
 
+def _reflection_response_schema(reflection_input: dict) -> dict:
+    """Constrain objective feedback to the exact objectives in this session."""
+    objective_ids = [
+        item["id"]
+        for item in reflection_input.get("objectives", [])
+        if isinstance(item, dict) and isinstance(item.get("id"), str)
+    ]
+    schema = ReflectionProposal.model_json_schema()
+    objective_feedback = schema["properties"]["objective_feedback"]
+    objective_feedback["minItems"] = len(objective_ids)
+    objective_feedback["maxItems"] = len(objective_ids)
+    objective_schema = schema["$defs"]["ObjectiveReflection"]
+    objective_schema["properties"]["objective_id"]["enum"] = objective_ids
+    return schema
+
+
 async def generate_reflection(generator, reflection_input: dict) -> ReflectionGeneration:
     """Generate one constrained reflection and verify all objective/source references."""
+    objective_ids = [
+        item["id"]
+        for item in reflection_input.get("objectives", [])
+        if isinstance(item, dict) and isinstance(item.get("id"), str)
+    ]
     try:
         completion = await generator.generate_structured(
             system_prompt=REFLECTION_SYSTEM_PROMPT,
             user_prompt=(
                 "Skriv refleksionen ud fra disse fastlåste, eventafledte oplysninger:\n"
                 + json.dumps(reflection_input, ensure_ascii=False, sort_keys=True)
+                + "\n\nReturnér præcis én objective_feedback-post for hvert id i denne "
+                "rækkefølge. Brug hvert id nøjagtigt én gang: "
+                + ", ".join(objective_ids)
             ),
             schema_name=REFLECTION_SCHEMA_NAME,
-            response_schema=ReflectionProposal.model_json_schema(),
+            response_schema=_reflection_response_schema(reflection_input),
             max_tokens=REFLECTION_MAX_TOKENS,
             temperature=0,
         )
         proposal = ReflectionProposal.model_validate(completion.output)
     except Exception as exc:
-        raise ReflectionGenerationError("reflection generation failed validation") from exc
+        provider_code = getattr(exc, "code", None)
+        if isinstance(provider_code, str) and provider_code in {
+            "empty_output",
+            "truncated_output",
+            "incomplete_output",
+            "invalid_json",
+            "output_not_object",
+            "output_too_large",
+        }:
+            diagnostic_code = provider_code
+        elif isinstance(exc, ValidationError):
+            diagnostic_code = "schema_validation"
+        else:
+            diagnostic_code = type(exc).__name__
+        raise ReflectionGenerationError(
+            "reflection generation failed validation",
+            diagnostic_code=diagnostic_code,
+        ) from exc
 
     expected_objectives = {
         item.get("id")
@@ -430,8 +475,23 @@ async def generate_reflection(generator, reflection_input: dict) -> ReflectionGe
         if isinstance(item, dict) and isinstance(item.get("id"), str)
     }
     objective_ids = [item.objective_id for item in proposal.objective_feedback]
-    if len(objective_ids) != len(set(objective_ids)) or set(objective_ids) != expected_objectives:
-        raise ReflectionGenerationError("reflection objectives do not match the pinned scenario")
+    if len(objective_ids) != len(set(objective_ids)):
+        raise ReflectionGenerationError(
+            "reflection objectives do not match the pinned scenario",
+            diagnostic_code="objective_duplicates",
+        )
+    if set(objective_ids) != expected_objectives:
+        missing = expected_objectives - set(objective_ids)
+        unexpected = set(objective_ids) - expected_objectives
+        diagnostic_code = (
+            "objective_unexpected" if unexpected else "objective_missing"
+        )
+        if missing and unexpected:
+            diagnostic_code = "objective_mixed_mismatch"
+        raise ReflectionGenerationError(
+            "reflection objectives do not match the pinned scenario",
+            diagnostic_code=diagnostic_code,
+        )
 
     authorized_evidence = set(reflection_input.get("citation_ready_evidence_ids", []))
     cited_evidence = proposal.historical_evidence_ids
@@ -452,7 +512,10 @@ async def generate_reflection(generator, reflection_input: dict) -> ReflectionGe
         or not set(cited_evidence).issubset(authorized_evidence)
         or invalid_comparison
     ):
-        raise ReflectionGenerationError("reflection cited evidence outside the postgame context")
+        raise ReflectionGenerationError(
+            "reflection cited evidence outside the postgame context",
+            diagnostic_code="citation_policy",
+        )
 
     visible_texts = [proposal.summary, *proposal.uncertainty_notes]
     visible_texts.extend(item.reflection for item in proposal.objective_feedback)
@@ -461,7 +524,10 @@ async def generate_reflection(generator, reflection_input: dict) -> ReflectionGe
     if proposal.historical_abstention is not None:
         visible_texts.append(proposal.historical_abstention)
     if any(_GRADE_LANGUAGE.search(value) or _MASTERY_CLAIM.search(value) for value in visible_texts):
-        raise ReflectionGenerationError("reflection includes grading or unsupported mastery language")
+        raise ReflectionGenerationError(
+            "reflection includes grading or unsupported mastery language",
+            diagnostic_code="language_policy",
+        )
 
     provenance = {
         "prompt_version": REFLECTION_PROMPT_VERSION,
@@ -540,7 +606,10 @@ async def revalidate_reflection_sources(
             for passage_id in used_ids
         )
     ):
-        raise ReflectionGenerationError("reflection evidence eligibility changed during generation")
+        raise ReflectionGenerationError(
+            "reflection evidence eligibility changed during generation",
+            diagnostic_code="evidence_changed",
+        )
 
 
 def _reflection_evidence_version(passage: dict) -> tuple:
@@ -573,7 +642,10 @@ def public_reflection_result(generation: ReflectionGeneration, reflection_input:
     for passage_id in source_ids:
         passage = eligible.get(passage_id)
         if passage is None:
-            raise ReflectionGenerationError("reflection source is no longer available")
+            raise ReflectionGenerationError(
+                "reflection source is no longer available",
+                diagnostic_code="evidence_missing",
+            )
         sources.append(
             {
                 key: passage[key]

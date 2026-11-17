@@ -6,6 +6,7 @@ from app.ai.providers import (
     NarratorRegistry,
     NarratorUnavailable,
     build_narrator_registry,
+    resolve_thinking_option,
     select_provider,
 )
 from app.core.settings import Settings
@@ -68,3 +69,12 @@ def test_provider_routing_never_falls_back_for_a_luna_session():
     assert select_provider(qwen, "local_qwen") is qwen
     with pytest.raises(NarratorUnavailable):
         select_provider(qwen, GPT6_LUNA_HIGH)
+
+
+def test_thinking_option_is_local_qwen_only():
+    from app.ai.providers import LOCAL_QWEN
+
+    assert resolve_thinking_option(LOCAL_QWEN, False) is False
+    assert resolve_thinking_option(LOCAL_QWEN, True, force_disabled=True) is False
+    assert resolve_thinking_option(GPT6_LUNA_HIGH, False) is None
+    assert resolve_thinking_option(GPT6_LUNA_HIGH, True, force_disabled=True) is None

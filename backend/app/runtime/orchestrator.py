@@ -18,7 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.ai.llm import MAX_REPAIR_INPUT_CHARS, StructuredCompletion, StructuredOutputError
-from app.ai.providers import NarratorUnavailable, select_provider
+from app.ai.providers import NarratorUnavailable, resolve_thinking_option, select_provider
 from app.core.settings import Settings
 from app.db.connection import session_factory
 from app.db.models import CommittedTurn, GameEvent, GameSession, ScenarioVersion
@@ -696,7 +696,9 @@ class TurnOrchestrator:
         evidence_search_latency_ms = 0
         tool_call_count = 0
         call_number = 0
-        call_enable_thinking = self.settings.llm_enable_thinking
+        call_enable_thinking = resolve_thinking_option(
+            session.narrator, self.settings.llm_enable_thinking
+        )
 
         async def persist_attempt(entry: dict) -> None:
             if final_correction_active:
@@ -712,6 +714,8 @@ class TurnOrchestrator:
             prompt_hash: str,
             outcome: str,
             failure_code: str | None = None,
+            error_type: str | None = None,
+            error_status: int | None = None,
             validation_codes: list[str] | None = None,
             completion: StructuredCompletion | None = None,
             output_hash: str | None = None,
@@ -730,6 +734,10 @@ class TurnOrchestrator:
             }
             if failure_code is not None:
                 entry["failure_code"] = failure_code
+            if error_type is not None:
+                entry["error_type"] = error_type
+            if error_status is not None:
+                entry["error_status"] = error_status
             if validation_codes:
                 entry["validation_codes"] = sorted(set(validation_codes))[:32]
             if completion is not None:
@@ -763,10 +771,10 @@ class TurnOrchestrator:
                 and structured_error is not None
                 and structured_error.code == "truncated_output"
             )
-            call_enable_thinking = (
-                False
-                if is_repair or repaired or tool_call_count > 0
-                else self.settings.llm_enable_thinking
+            call_enable_thinking = resolve_thinking_option(
+                session.narrator,
+                self.settings.llm_enable_thinking,
+                force_disabled=is_repair or repaired or tool_call_count > 0,
             )
             request_prompt = user_prompt
             if is_repair:
@@ -906,6 +914,12 @@ class TurnOrchestrator:
                         prompt_hash=prompt_sha256,
                         outcome="provider_failure",
                         failure_code="PROVIDER_FAILURE",
+                        error_type=type(exc).__name__,
+                        error_status=(
+                            exc.response.status_code
+                            if isinstance(exc, httpx.HTTPStatusError)
+                            else None
+                        ),
                     )
                 )
                 raise TurnGenerationFailure("PROVIDER_FAILURE", retryable=True) from exc
@@ -917,6 +931,7 @@ class TurnOrchestrator:
                         prompt_hash=prompt_sha256,
                         outcome="provider_failure",
                         failure_code="PROVIDER_FAILURE",
+                        error_type=type(exc).__name__,
                     )
                 )
                 raise TurnGenerationFailure("PROVIDER_FAILURE", retryable=True) from exc

@@ -1,6 +1,7 @@
 """Session-scoped M2 API; generation is handled by the separate worker."""
 import hashlib
 import hmac
+import logging
 import re
 import secrets
 from datetime import date, datetime, timedelta, timezone
@@ -69,6 +70,7 @@ from app.scenarios.schema_v2 import ScenarioDefinitionV2
 from app.scenarios.validation import validate_definition, validate_v2_definition
 
 router = APIRouter(prefix="/api/v1")
+logger = logging.getLogger(__name__)
 bearer = HTTPBearer(auto_error=False)
 ACTIVE_STATUSES = ("queued", "running", "retryable_failure")
 CAPABILITY_LIFETIME = timedelta(hours=24)
@@ -983,6 +985,10 @@ async def reflect_session(
         except ReflectionBuildError as exc:
             raise HTTPException(status_code=409, detail="Committed reflection history is invalid") from exc
         except ReflectionGenerationError as exc:
+            logger.warning(
+                "reflection_generation_unavailable reason=%s",
+                exc.diagnostic_code or "reflection_rejected",
+            )
             raise HTTPException(
                 status_code=503,
                 detail={"code": "REFLECTION_UNAVAILABLE", "message": "Refleksionen er midlertidigt utilgængelig."},
