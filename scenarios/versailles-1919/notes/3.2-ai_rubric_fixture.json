@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "scenario_slug": "versailles-1919",
+  "scenario_version": "3.2-ai",
+  "purpose": "Forfatter-fixture til rubricdesign; ikke et talbaseret historisk facit.",
+  "authority": {
+    "player_role": "Fiktiv britisk rådgiver med ret til at argumentere og foreslå.",
+    "player_cannot": ["ratificere traktat", "tale på Kinas eller Japans vegne", "gøre forslag bindende for en delegation"],
+    "decision_rule": "En aftale kræver udtrykkeligt samtykke fra de berørte deltagere; Japan er fraværende i scenen."
+  },
+  "negotiable_dimensions": [
+    {
+      "id": "rights_and_sovereignty",
+      "description": "Disposition over de tyske rettigheder i Shantung og konsekvenser for kinesisk suverænitet.",
+      "historical_anchor": "R07, FRUS V, dokument 15, pp. 142-143."
+    },
+    {
+      "id": "rail_port_and_administration",
+      "description": "Jernbanedrift, havneadgang, politi, militær tilstedeværelse og lokal administration.",
+      "historical_anchor": "R07, FRUS V, dokument 15, pp. 139-142."
+    },
+    {
+      "id": "commitments_and_process",
+      "description": "Britiske og franske forpligtelser over for Japan, Kinas deltagelse og en ikke-bindende næste proces.",
+      "historical_anchor": "R07, FRUS V, dokument 15, pp. 139-143."
+    }
+  ],
+  "objectives": [
+    {
+      "id": "preserve_chinese_agency",
+      "success": "Anerkend Kinas udtrykkelige afvisning af begge fremlagte alternativer; kræv et tydeligt kinesisk svar før enhver aftale.",
+      "partial": "Spørg Kina, men gør et foreløbigt forslag betinget af senere kinesisk samtykke.",
+      "fail": "Behandl deltagelse, stilhed eller tidsfrist som samtykke.",
+      "veto": "Pres Kina til at vælge mellem de to alternativer, som Koo afviste, og registrér det som accept.",
+      "evidence": ["R07, FRUS V, dokument 15, pp. 142-143"]
+    },
+    {
+      "id": "contain_treaty_commitment",
+      "success": "Skeln præcist mellem britiske/franske aftaler med Japan og Kinas særskilte aftaler; udforsk, hvad der kan gøres inden for de forpligtelser.",
+      "partial": "Anerkend forpligtelserne, men lad være med at undersøge deres afgrænsning.",
+      "fail": "Påstå, at Storbritannien eller Frankrig frit kan tilsidesætte alle forpligtelser.",
+      "veto": "Tilskriv Japan samtykke eller en ændret aftale uden japansk deltagelse.",
+      "evidence": ["R07, FRUS V, dokument 15, pp. 139-140"]
+    },
+    {
+      "id": "make_process_progress",
+      "success": "Foreslå en præcis, ikke-bindende ekspertgennemgang med tid til kinesisk overvejelse og uden at foregive, at spørgsmålet allerede er løst.",
+      "partial": "Foreslå mere tid eller gennemgang, men uden at sige, hvilke spørgsmål der skal undersøges.",
+      "fail": "Brug en procesforsinkelse til at antyde, at Kina har accepteret substansen.",
+      "veto": "Afslut som bindende aftale uden udtrykkeligt samtykke fra berørte deltagere.",
+      "evidence": ["R07, FRUS V, dokument 15, p. 143"]
+    },
+    {
+      "id": "separate_record_from_simulation",
+      "success": "Angiv, hvilke dele der er dokumenteret, hvilke der er fortolkning, og hvilke der er nye kontrafaktiske forslag.",
+      "partial": "Markér forslag som hypotetiske, men bland senere dokumenter ind i mødedatoens viden.",
+      "fail": "Fremlæg et opdigtet løfte eller senere hændelse som historisk faktum.",
+      "veto": "Brug R11A, der er dateret efter scenens møde, som om deltagerne kendte teksten den 22. april.",
+      "evidence": ["R07, FRUS V, dokument 15", "R11A, FRUS V, dokument 22, Appendix IV"]
+    }
+  ],
+  "fixtures": [
+    {
+      "id": "procedural_hold_for_review",
+      "type": "multi_objective_process_compromise",
+      "status": "plausible_process_gain_not_final_settlement",
+      "proposal": [
+        "Britiske, franske og amerikanske eksperter sammenligner de to fremlagte alternativer med eksplicit vurdering af konsekvenserne for Kina.",
+        "Kina får mere betænkningstid og afgiver ingen accept i denne scene.",
+        "Ingen overdragelse eller aftale indgås; Japan er fraværende, og Kinas beslutningsret bevares."
+      ],
+      "meets": ["preserve_chinese_agency", "contain_treaty_commitment", "make_process_progress", "separate_record_from_simulation"],
+      "historical_basis": [
+        "Lloyd George foreslog ekspertgennemgang af de to alternativer og mere tid til Kina.",
+        "Clemenceau gjorde ikke indsigelse mod ekspertgennemgangen."
+      ],
+      "counterfactual_boundary": "Mødenoterne dokumenterer ikke, at Kina accepterede en bestemt endelig løsning eller at ekspertprocessen afgjorde spørgsmålet. At afvikle en fuld, succesfuld ekspertproces i spillet er kontrafaktisk."
+    },
+    {
+      "id": "league_assurance_but_same_binary_choice",
+      "type": "attractive_offer_that_crosses_chinese_redline",
+      "status": "reject_as_framed",
+      "offer": "Japan får de tyske rettigheder; Kina skal vælge dette eller sine tidligere aftaler med Japan. Til gengæld fremhæves Wilsons argument om fremtidig beskyttelse gennem Folkeforbundet, mens Storbritannien og Frankrig bevarer deres forpligtelser.",
+      "why_it_looks_attractive": "Det beskytter traktatstroværdighed og alliancer, og Wilson fremlagde selv Folkeforbundet som mulig fremtidig beskyttelse.",
+      "why_china_rejects": "Koo sagde, at begge fremlagte alternativer var uacceptable. En fremtidig garanti, som endnu ikke er konkret forhandlet, ændrer ikke automatisk dette svar.",
+      "historical_boundary": "Offeret er en simuleret kombination, ikke et ordret historisk forslag. Kildeteksten dokumenterer Wilsons argument om Folkeforbundet, ikke en ny, bindende garanti eller kinesisk accept.",
+      "evidence": ["R07, FRUS V, dokument 15, pp. 142-147"]
+    },
+    {
+      "id": "unratified_no_agreement",
+      "type": "valid_unresolved_outcome",
+      "status": "no_automatic_loss",
+      "outcome": "Mødet slutter uden aftale, men parterne har gjort uenigheden tydelig, undgået at forfalske kinesisk samtykke og kan anbefale en senere proces.",
+      "award": ["preserve_chinese_agency", "separate_record_from_simulation"],
+      "do_not_award": ["make_process_progress", "final_settlement"],
+      "reason": "Scenens beslutningsrettigheder og det dokumenterede udfald tillader, at spørgsmålet forbliver uafklaret."
+    }
+  ],
+  "scoring_policy": {
+    "units": "Kvalitative forklaringer, ikke skjulte numeriske metrics.",
+    "veto_overrides_positive_scores": true,
+    "feedback_must_name": ["konkret spillerhandling", "berørt delegation", "kildeanker eller usikkerhed", "hvad der fortsat er uafklaret"],
+    "historical_claims": "Vurder kun mod godkendte passager, når rettigheder og kilde-review er afsluttet; indtil da er dette fixture til forfatterskab."
+  }
+}

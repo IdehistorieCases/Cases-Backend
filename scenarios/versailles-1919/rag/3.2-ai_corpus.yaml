@@ -1,0 +1,52 @@
+schema_version: 1
+scenario_slug: versailles-1919
+scenario_version: "3.2-ai"
+phase_world_dates:
+  conference: "1919-04-22"
+  reflection: "1919-04-22"
+passages:
+  - key: fourteen_points_open_covenants
+    source_identifier: R04
+    source_title: "Woodrow Wilsons Fjorten Punkter, punkt I"
+    source_url: https://www.archives.gov/milestone-documents/president-woodrow-wilsons-14-points
+    source_anchor: "Punkt I, tale til Kongressen, 8. januar 1918"
+    passage_text: "Open covenants of peace, openly arrived at"
+    passage_sha256: 016c14301c5f17098bedb8032300ed59292d68ce0469373fb3589937f6fd81f0
+    document_date: "1918-01-08"
+    in_world_available_from: "1918-01-08"
+    postgame_only: false
+    actor_ids: [britain, united_states, france, china, japan]
+    visibility_scope: public
+    rights_basis: "Officiel transskription fra U.S. National Archives. Passagekontrol og genbrugsrettigheder til den konkrete undervisningsudrulning afventer menneskelig gennemgang."
+    review_status: pending
+    rights_status: pending
+  - key: april22_council_minutes_postgame
+    source_identifier: R07
+    source_title: "Notes of a Meeting at President Wilson's House, 22 April 1919, 4:30 p.m."
+    source_url: https://history.state.gov/historicaldocuments/frus1919Parisv05/d15
+    source_anchor: "FRUS V, dokument 15, pp. 142–143, afsnit 1, efter delegationspause"
+    passage_text: "Mr. Koo said he could make no choice, because both alternatives were unacceptable."
+    passage_sha256: 5da88af92db37ee68f4cacd746bd3bdf25d1e41a878b6b5e113a26cfa9c9c65f
+    document_date: "1919-04-22"
+    in_world_available_from: null
+    postgame_only: true
+    actor_ids: []
+    visibility_scope: postgame
+    rights_basis: "Officielle FRUS-mødenoter. Arkivtekst anvendes kun i efterspil; adgangs- og genbrugsrettigheder afventer menneskelig kontrol."
+    review_status: pending
+    rights_status: pending
+  - key: china_april23_statement_postgame
+    source_identifier: R11A
+    source_title: "Chinese Statement on the Kiaochow-Shantung settlement, Appendix IV"
+    source_url: https://history.state.gov/historicaldocuments/frus1919Parisv05/d22
+    source_anchor: "FRUS V, dokument 22, Appendix IV, punkt I, p. 250; udtalelse dateret 23. april 1919"
+    passage_text: "Germany renounces to the Five Allied and Associated Powers her holdings, rights and privileges in Shantung for restoration to China."
+    passage_sha256: de320d7d54d502a9612e7f1e9036797b013082f04e3126f7e5a4525336056e7c
+    document_date: "1919-04-23"
+    in_world_available_from: null
+    postgame_only: true
+    actor_ids: []
+    visibility_scope: postgame
+    rights_basis: "Officiel FRUS-gengivelse af en særskilt kinesisk udtalelse; ikke tilgængelig i scenens verden 22. april. Passagekontrol og genbrugsrettigheder afventer menneskelig gennemgang."
+    review_status: pending
+    rights_status: pending

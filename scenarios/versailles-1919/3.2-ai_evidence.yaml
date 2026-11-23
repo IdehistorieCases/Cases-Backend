@@ -1,0 +1,11 @@
+policy_version: 1
+scenario_slug: versailles-1919
+scenario_version: "3.2-ai"
+citation_ready: false
+default_when_no_approved_passage: RAG_NO_EVIDENCE
+date_fields_are_distinct: [record_date, archive_publication_date, in_world_available_from]
+source_access:
+  - {source_id: R04, record_date: "1918-01-08", in_world_available_from: "1918-01-08", scope: period_statement_paraphrase_only, actor_ids: [britain, united_states, france, china, japan], citation_ready: false}
+  - {source_id: R07, record_date: "1919-04-22", in_world_available_from: "1919-05-24", scope: confidential_council_record, actor_ids: [britain, france, united_states], citation_ready: false}
+  - {source_id: R11, record_date: "1919-04-25", in_world_available_from: "1919-04-25", scope: confidential_council_record, actor_ids: [britain, france, united_states], citation_ready: false}
+  - {source_id: R11A, record_date: "1919-04-23", in_world_available_from: "1919-04-25", scope: delegation_submission, actor_ids: [china], citation_ready: false}

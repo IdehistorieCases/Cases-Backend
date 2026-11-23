@@ -1,0 +1,167 @@
+# Nyt, uaktiveret kandidat-release; 3.1-ai er uændret.
+schema_version: 2
+slug: versailles-1919
+version: "3.2-ai"
+metadata:
+  title: "Kiaochow og Shantung: suverænitet, traktater og forhandling"
+  language: da
+  summary: "En afgrænset forhandlingsøvelse om Kinas krav, stormagternes aftaler med Japan og hvem der kan forpligte hvem."
+  subject: "Idéhistorie"
+  intended_audience: "HTX, DDU mini-eksamen"
+  historical_period: {start: "1918-01-08", end: "1919-12-31"}
+historical_context:
+  introduction: >-
+    Du spiller en fiktiv britisk rådgiver ved en afgrænset samtale om Kiaochow og
+    Shantung i Paris den 22. april 1919. De historiske personer og deres
+    dokumenterede positioner er kildebaserede; rådgiveren, dialogen og alle
+    alternative forslag eller udfald er simulation.
+  counterfactual_disclaimer: >-
+    Kun eksplicit kildebelagte udsagn må fremstilles som historiske. Spilforslag,
+    reaktioner, aftaler og udfald ud over de dokumenterede mødenoter er
+    kontrafaktiske. En foreslået proces er ikke en indgået aftale, og et
+    uafklaret spørgsmål er ikke et nederlag.
+actors:
+  - id: britain
+    name: "Den britiske delegation"
+    description: "Storbritannien var bundet af en aftale med Japan, men Lloyd George sagde også, at han inden for den ville gøre sit yderste for at beskytte Kina."
+    motivations: [traktatstroværdighed, kinesisk_sikkerhed, regional_fred]
+    knowledge_constraints: ["Skeln mellem Storbritanniens aftale med Japan og Kinas aftale med Japan."]
+  - id: united_states
+    name: "USA"
+    description: "Wilson beskrev USA som den eneste magt ved dette bord, der ikke var bundet af de omtalte traktater."
+    motivations: [retfærdighed, traktatstroværdighed, kinesisk_handlefrihed]
+    knowledge_constraints: ["En amerikansk vurdering af Folkeforbundet er ikke det samme som en bindende ny garanti."]
+  - id: france
+    name: "Den franske delegation"
+    description: "Frankrig havde en aftale med Japan og støttede i dette møde Lloyd Georges fremlagte linje."
+    motivations: [traktatstroværdighed, stabilitet]
+    knowledge_constraints: ["Udled ikke en fuld fransk Shantung-politik af én kort tilslutning i mødenoterne."]
+  - id: china
+    name: "Den kinesiske delegation"
+    description: "Lou Tseng-Tsiang og Wellington Koo deltog; Koo fremlagde den kinesiske argumentation."
+    motivations: [suveraenitet, direkte_restitution, politisk_handlefrihed]
+    knowledge_constraints: ["Sammenbland ikke den kinesiske delegation med Japan eller med stormagternes beslutningsret."]
+  - id: japan
+    name: "Japan"
+    description: "Japan var ikke til stede ved den valgte samtale; japanske synspunkter gengives kun som refereret af andre."
+    motivations: [rettigheder_i_shantung]
+    knowledge_constraints: ["Japan kan ikke acceptere et forslag i denne scene; tilskriv ikke japansk samtykke."]
+roles:
+  - id: british_adviser
+    actor_id: britain
+    title: "Fiktiv britisk forhandlingsrådgiver"
+    playable: true
+    introduction: "Du rådgiver den britiske delegation. Du kan stille spørgsmål, begrunde forslag og anbefale en proces, men du kan ikke tale på vegne af en anden delegation eller ratificere en traktat."
+    knowledge_constraints: ["Din rolle er opdigtet.", "Brug ikke senere udfald som viden i mødet."]
+  - id: lloyd_george
+    actor_id: britain
+    title: "David Lloyd George"
+    playable: false
+    introduction: "Britisk regeringsleder og deltager i mødet."
+    knowledge_constraints: ["Følg kun dokumenterede positioner og tydeligt markerede simulationstilføjelser."]
+  - id: wilson
+    actor_id: united_states
+    title: "Woodrow Wilson"
+    playable: false
+    introduction: "USA's præsident og vært for mødet."
+    knowledge_constraints: ["Et forslag om Folkeforbundets fremtidige rolle er ikke en allerede forhandlet Shantung-aftale."]
+  - id: clemenceau
+    actor_id: france
+    title: "Georges Clemenceau"
+    playable: false
+    introduction: "Frankrigs regeringsleder og deltager i mødet."
+    knowledge_constraints: ["Opfind ikke en særskilt fransk indrømmelse, som ikke er dokumenteret."]
+  - id: china_delegation
+    actor_id: china
+    title: "Den kinesiske delegation: Lou Tseng-Tsiang og Wellington Koo"
+    playable: false
+    introduction: "Begge plenipotentiærer deltog; Wellington Koo fremlagde hovedparten af den gengivne argumentation."
+    knowledge_constraints: ["Gør ikke Koo til taler for udokumenterede interne kinesiske fraktioner."]
+default_role_id: british_adviser
+learning_objectives:
+  - id: weigh_treaty_and_justice
+    description: "Vurder spændingen mellem traktatforpligtelser, retfærdighed og varig fred."
+    concepts: [traktat, retfærdighed, fred]
+    observable_behaviors: ["Begrund hvilken forpligtelse eller hvilket princip du prioriterer.", "Beskriv omkostningen for mindst én berørt delegation."]
+  - id: examine_representation
+    description: "Undersøg hvem der deltager, hvem der berøres, og hvem der kan binde en aftale."
+    concepts: [repræsentation, beslutningsret, suveraenitet]
+    observable_behaviors: ["Identificer en fraværende eller berørt part.", "Skeln mellem rådgivning, forslag og bindende samtykke."]
+  - id: distinguish_evidence_and_simulation
+    description: "Skeln mellem en kildeoplysning, en fortolkning og et kontrafaktisk forslag."
+    concepts: [kildekritik, fortolkning, kontrafaktisk_historie]
+    observable_behaviors: ["Markér usikkerhed eller kildebegrænsning.", "Mærk et nyt forslag eller udfald som simulation."]
+chronology:
+  opening_date: "1919-04-22"
+  max_days_per_advance: 1
+interaction_guidance:
+  style: negotiation
+  freedom: open_ended
+  emphasize: [competing_interests, representation, source_criticism, nonbinding_process]
+content_items:
+  - key: player_briefing
+    kind: player_briefing
+    file: notes/3.2-ai_player_briefing.md
+    mode: gameplay
+    visibility: [british_adviser]
+    review_status: draft
+    availability_date: "1919-04-22"
+    world_valid_from: "1919-04-22"
+    source_refs: [R04, R07]
+  - key: lloyd_george_private_dossier
+    kind: npc_private_dossier
+    file: notes/3.2-ai_npc_lloyd_george.md
+    mode: gameplay
+    visibility: [lloyd_george]
+    review_status: draft
+    availability_date: "1919-04-22"
+    world_valid_from: "1919-04-22"
+    source_refs: [R07]
+  - key: wilson_private_dossier
+    kind: npc_private_dossier
+    file: notes/3.2-ai_npc_wilson.md
+    mode: gameplay
+    visibility: [wilson]
+    review_status: draft
+    availability_date: "1919-04-22"
+    world_valid_from: "1919-04-22"
+    source_refs: [R07]
+  - key: clemenceau_private_dossier
+    kind: npc_private_dossier
+    file: notes/3.2-ai_npc_clemenceau.md
+    mode: gameplay
+    visibility: [clemenceau]
+    review_status: draft
+    availability_date: "1919-04-22"
+    world_valid_from: "1919-04-22"
+    source_refs: [R07]
+  - key: china_private_dossier
+    kind: npc_private_dossier
+    file: notes/3.2-ai_npc_china.md
+    mode: gameplay
+    visibility: [china_delegation]
+    review_status: draft
+    availability_date: "1919-04-22"
+    world_valid_from: "1919-04-22"
+    source_refs: [R07]
+  - key: rubric_fixture
+    kind: negotiation_rubric_fixture
+    file: notes/3.2-ai_rubric_fixture.json
+    mode: postgame
+    visibility: [british_adviser]
+    review_status: draft
+    source_refs: [R07, R11, R11A]
+  - key: source_readiness
+    kind: source_readiness_note
+    file: notes/3.2-ai_release_readiness.md
+    mode: postgame
+    visibility: [british_adviser]
+    review_status: draft
+    source_refs: [R04, R07, R11, R11A]
+completion_policy:
+  mode: player_end
+  min_meaningful_decisions: 3
+  max_turns: 14
+  objective_ids: [weigh_treaty_and_justice, examine_representation, distinguish_evidence_and_simulation]
+optional_beats: []
+source_refs: [R04, R07, R11, R11A]

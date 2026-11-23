@@ -1,0 +1,34 @@
+schema_version: 1
+scenario_slug: versailles-1919
+scenario_version: "3.2-ai"
+cases:
+  - id: april22_minutes_temporal_and_confidential_block
+    labels: [date_leak, confidentiality, actor_visibility]
+    query: "What did Koo say about choosing between the two alternatives?"
+    actor_id: britain
+    world_date: "1919-04-22"
+    mode: gameplay
+    expected_status: RAG_NO_EVIDENCE
+    expected_passage_keys: []
+    blocked_passage_keys: [april22_council_minutes_postgame]
+    simulated_review: {review_status: approved, rights_status: approved}
+  - id: april23_chinese_statement_not_yet_available
+    labels: [date_leak, actor_visibility]
+    query: "What restoration terms did the Chinese delegation put in its later written statement?"
+    actor_id: china
+    world_date: "1919-04-22"
+    mode: gameplay
+    expected_status: RAG_NO_EVIDENCE
+    expected_passage_keys: []
+    blocked_passage_keys: [china_april23_statement_postgame]
+    simulated_review: {review_status: approved, rights_status: approved}
+  - id: public_fourteen_points_passage_rights_pending
+    labels: [rights]
+    query: "What was Wilson's public principle about open covenants?"
+    actor_id: britain
+    world_date: "1919-04-22"
+    mode: gameplay
+    expected_status: RAG_NO_EVIDENCE
+    expected_passage_keys: []
+    blocked_passage_keys: [fourteen_points_open_covenants]
+    simulated_review: {review_status: approved, rights_status: pending}

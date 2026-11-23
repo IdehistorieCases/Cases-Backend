@@ -4,3 +4,4 @@
 /backend/evaluation_data/**/*.jsonl text eol=lf
 /scenarios/**/*.md text eol=lf
 /scenarios/**/*.sha256 text eol=lf
+/scenarios/versailles-1919/notes/3.2-ai_rubric_fixture.json text eol=lf
