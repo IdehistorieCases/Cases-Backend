@@ -1,0 +1,257 @@
+fixture_schema_version: 1
+scenario:
+  slug: versailles-1919
+  version: 3.2-ai
+purpose: >
+  Constructed adversarial contract tests for the negotiation domain.
+  These are counterfactual test transcripts, not historical dialogue or claims
+  that any offer, response, signature, or ratification occurred.
+shared_invariants:
+  - speech_and_signals_never_create_or_change_an_offer
+  - advice_and_drafts_never_bind_the_players_delegation
+  - every_offer_and_response_names_a_package_and_revision
+  - only_release_authorized_actors_can_offer_accept_sign_or_ratify
+  - a_revised_offer_supersedes_the_old_revision_atomically
+  - stale_responses_do_not_change_events_projection_or_turn_number
+  - acceptance_is_not_signature_or_ratification
+  - silence_deadline_and_player_exit_are_never_consent
+  - absent_japan_cannot_speak_accept_sign_or_be_inferred_to_consent
+  - substantive_changes_to_japanese_rights_require_japanese_consent
+  - private_dossiers_are_not_available_to_other_actors
+  - replay_rebuilds_the_same_state_without_rerunning_inference
+  - negotiation_objectives_and_learning_objectives_are_scored_separately
+  - no_agreement_is_a_valid_unresolved_outcome
+
+cases:
+  - id: process_only_memo_ratified_in_simulation
+    fixture_authority:
+      status: counterfactual_test_only
+      explicitly_authorized_actions:
+        lloyd_george: [issue_process_offer, sign_process_memo, ratify_process_memo]
+        clemenceau: [accept_process_offer, sign_process_memo, ratify_process_memo]
+        wilson: [accept_process_offer, sign_process_memo, ratify_process_memo]
+        british_adviser: [advise, draft]
+      no_authority:
+        china_delegation: [accept_this_offer, sign_this_memo]
+        japan: [all_actions]
+    package:
+      id: process-review-01
+      revision: 1
+      issuer: lloyd_george
+      recipients: [clemenceau, wilson]
+      kind: process_memo
+      required_signatories: [lloyd_george, clemenceau, wilson]
+      required_ratifiers: [lloyd_george]
+      terms:
+        - family: process_and_undertaking
+          action: commission_a_nonbinding_expert_comparison
+          scope: compare_the_two_options_and_their_effects_on_china
+          condition: lloyd_george_clemenceau_and_wilson_sign_current_revision
+          effect: no_transfer_no_change_to_any_chinese_or_japanese_right
+        - family: process_and_undertaking
+          action: invite_china_to_submit_views_or_decline
+          scope: chinese_participation_is_voluntary
+          condition: none
+          effect: invitation_only_no_consent_attributed_to_china
+        - family: process_and_undertaking
+          action: give_china_additional_time_to_consider
+          scope: no_deadline_is_imposed_on_china
+          condition: none
+          effect: no_acceptance_or_waiver_by_china
+    transcript:
+      - actor: british_adviser
+        act: speech
+        text: I recommend an expert comparison that gives China time and leaves every rights question open.
+        expected: advice_only_no_offer_state_change
+      - actor: british_adviser
+        act: draft
+        package_id: process-review-01
+        expected: private_draft_only_no_delegation_commitment
+      - actor: lloyd_george
+        act: issue_offer
+        package_id: process-review-01
+        revision: 1
+        expected: offer_opened_by_authorized_issuer
+      - actor: wilson
+        act: speech
+        text: The League may offer future protection; that is not a new guarantee in this memorandum.
+        expected: speech_only_no_guarantee_or_offer_term_added
+      - actor: clemenceau
+        act: accept
+        package_id: process-review-01
+        revision: 1
+        expected: explicit_acceptance_by_authorized_recipient
+      - actor: wilson
+        act: accept
+        package_id: process-review-01
+        revision: 1
+        expected: explicit_acceptance_by_authorized_recipient
+      - actor: lloyd_george
+        act: sign
+        package_id: process-review-01
+        revision: 1
+        expected: issuer_signature_recorded
+      - actor: clemenceau
+        act: sign
+        package_id: process-review-01
+        revision: 1
+        expected: required_signature_recorded
+      - actor: wilson
+        act: sign
+        package_id: process-review-01
+        revision: 1
+        expected: required_signature_recorded
+      - actor: lloyd_george
+        act: ratify
+        package_id: process-review-01
+        revision: 1
+        expected: ratification_recorded_only_after_all_required_signatures
+    expected_event_sequence:
+      - player_advice_recorded
+      - offer_issued
+      - offer_response_accepted: 2
+      - agreement_signed: 3
+      - agreement_ratified
+    expected_event_types:
+      - player_advice_recorded
+      - offer_issued
+      - offer_response_accepted
+      - agreement_signed
+      - agreement_ratified
+    expected_final_state:
+      negotiation_status: concluded
+      package_status: ratified_in_simulation
+      signatories: [lloyd_george, clemenceau, wilson]
+      ratifiers: [lloyd_george]
+      chinese_consent: false
+      japanese_consent: false
+      treaty_of_versailles_ratified: false
+      transfer_of_rights: false
+    assertions:
+      - the process agreement binds only its three authorized signatories
+      - China remains free to participate or decline and is not recorded as consenting
+      - no Chinese or Japanese right changes
+      - the simulation labels this memorandum counterfactual and process-only
+      - ratification of this simulated memorandum is not ratification of the Treaty of Versailles
+      - replay reproduces the same signed and ratified process-only state
+
+  - id: conditional_revision_refusal_and_unratified_deadline
+    fixture_authority:
+      status: counterfactual_test_only
+      explicitly_authorized_actions:
+        lloyd_george: [issue_substantive_offer, sign_if_all_required_parties_consent]
+        wilson: [accept_or_refuse_current_offer_revision]
+        china_delegation: [accept_or_refuse_current_offer_revision]
+        british_adviser: [advise, draft]
+      absent:
+        japan: cannot_respond_or_be_inferred_to_consent
+    package:
+      id: shantung-disposition-02
+      issuer: lloyd_george
+      required_signatories: [lloyd_george, china_delegation, japan]
+      required_ratifiers: []
+      revision_1:
+        terms:
+          - family: disposition_and_sovereignty
+            action: retain_japanese_control_of_the_former_german_rights
+            condition: japanese_signature_and_explicit_chinese_acceptance
+            effect: no_effect_until_all_conditions_and_required_signatures
+          - family: administration_and_access
+            action: guarantee_commercial_access
+            condition: same_as_revision_1_disposition
+            effect: conditional_only
+      revision_2:
+        supersedes: 1
+        terms:
+          - family: disposition_and_sovereignty
+            action: retain_japanese_control_of_the_former_german_rights
+            condition: japanese_signature_and_explicit_chinese_acceptance_after_review
+            effect: no_effect_until_all_conditions_and_required_signatures
+          - family: administration_and_access
+            action: place_local_policing_and_port_administration_under_chinese_administration
+            condition: japanese_signature_and_explicit_chinese_acceptance_after_review
+            effect: conditional_only
+          - family: process_and_undertaking
+            action: invite_expert_review_and_allow_more_time
+            condition: china_may_decline_without_penalty
+            effect: no_consent_or_waiver_by_china
+    transcript:
+      - actor: british_adviser
+        act: speech
+        text: I can draft an option for the principals, but I cannot offer it for Britain.
+        expected: advice_only_no_offer_state_change
+      - actor: british_adviser
+        act: signal
+        signal_type: willingness_to_explore
+        expected: signal_only_no_offer_or_commitment_state_change
+      - actor: lloyd_george
+        act: issue_offer
+        package_id: shantung-disposition-02
+        revision: 1
+        expected: offer_opened_and_japanese_signature_marked_required
+      - actor: china_delegation
+        act: refuse
+        package_id: shantung-disposition-02
+        revision: 1
+        reason: the package retains the rejected choice and lacks direct Chinese consent to the disposition
+        expected: explicit_refusal_recorded_no_concession
+      - actor: wilson
+        act: speech
+        text: The League might provide future protection, but no new enforceable guarantee is being offered here.
+        expected: speech_only_no_guarantee_or_acceptance
+      - actor: lloyd_george
+        act: revise_offer
+        package_id: shantung-disposition-02
+        new_revision: 2
+        condition: Japanese signature and China's explicit acceptance after review
+        expected: revision_2_supersedes_revision_1_atomically
+      - actor: wilson
+        act: accept
+        package_id: shantung-disposition-02
+        revision: 1
+        expected: stale_response_rejected_without_canonical_state_change
+      - actor: china_delegation
+        act: refuse
+        package_id: shantung-disposition-02
+        revision: 2
+        reason: the retained Japanese title still leaves the central sovereignty question unresolved
+        expected: explicit_refusal_recorded_for_current_revision
+      - actor: session
+        act: deadline
+        package_id: shantung-disposition-02
+        expected: negotiation_closed_unresolved_no_implicit_acceptance
+    expected_event_sequence:
+      - offer_issued
+      - offer_response_refused
+      - offer_revision_issued
+      - stale_response_rejected_without_event_state_change
+      - offer_response_refused
+      - negotiation_closed
+    expected_event_types:
+      - offer_issued
+      - offer_response_refused
+      - offer_revision_issued
+      - negotiation_closed
+    expected_non_events:
+      - stale_acceptance_of_revision_1
+      - japanese_acceptance_or_signature
+      - chinese_acceptance_or_signature
+      - agreement_signed
+      - agreement_ratified
+      - rights_transfer
+    expected_final_state:
+      negotiation_status: unresolved
+      package_status: expired_without_agreement
+      current_revision: 2
+      chinese_consent: false
+      japanese_consent: false
+      treaty_of_versailles_ratified: false
+      transfer_of_rights: false
+    assertions:
+      - the player adviser cannot issue or accept the package
+      - revision 2 is conditional and requires explicit consent plus Japanese signature
+      - revision 1 cannot be accepted after revision 2 is issued
+      - China's explicit refusal is preserved without generalizing it to every conceivable proposal
+      - the deadline closes the negotiation without agreement or fabricated consent
+      - no-agreement is unresolved, not a loss or a hidden concession
+      - replay reproduces the same revision history and unresolved state
