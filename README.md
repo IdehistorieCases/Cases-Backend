@@ -7,7 +7,7 @@ The repository contains a durable backend, authored scenarios, a structured mode
 | Part | Owner | Current role |
 |---|---|---|
 | History API, database, migrations, durable queue and turn validation | This repository (`ddu-backend`) | Application state and validated v2 gameplay |
-| vLLM, embedding, reranking, model cache, checkpoints, GPU and serving limits | [Local-AI-API-LITE](https://github.com/MarcusFunt/Local-AI-API-LITE) | Independently owned inference services |
+| ChatGPT 6 Luna gateway, Codex bridge, optional Qwen, retrieval workers, model cache, and serving limits | [Cases-AI](https://github.com/IdehistorieCases/Cases-AI) | Canonical CASES AI services |
 | History-specific model request and Danish diagnostic schema | This repository | A narrow client adapter used by the worker monitor and explicit probe |
 | Scenario-approved historical evidence and retrieval policy | This repository | Session-scoped evidence search; the checked-in Versailles excerpts remain unapproved |
 | Retrieval evaluation and authentic history library | This repository | Offline benchmark and a separate, immutable `history_authentic` schema |
@@ -43,7 +43,7 @@ Do not use `docker compose down -v` for routine shutdown; it can remove the Post
 
 ## Optional external model diagnostic
 
-For real narrator inference, start and validate [Local-AI-API-LITE](https://github.com/MarcusFunt/Local-AI-API-LITE) and its unified gateway using that repository's runbook. Configure `INFERENCE_GATEWAY_BASE_URL`, the CASES-only `INFERENCE_GATEWAY_TOKEN`, `LLM_MODEL_ALIAS`, and `LLM_ENABLE_THINKING` in the backend `.env`. The default gateway is `http://ddu-gateway:8080`; Qwen uses `ddu-narrator` and the optional session-pinned Luna model uses `gpt-6-luna`. CASES holds no bridge token or Codex endpoint. The API also joins the private network for the separate `ddu-embed` RAG endpoint.
+For real narrator inference, use the canonical [Cases-AI](https://github.com/IdehistorieCases/Cases-AI) gateway and Codex CLI bridge. [Cases-Startup](https://github.com/IdehistorieCases/Cases-Startup) starts these services with the connected GUI's default session narrator set to ChatGPT 6 Luna (`gpt6_luna_high`, model `gpt-6-luna`). Local Qwen (`ddu-narrator`) remains optional; a Luna session stays pinned and does not fall back to Qwen. Configure `INFERENCE_GATEWAY_BASE_URL`, the CASES-only `INFERENCE_GATEWAY_TOKEN`, and `LUNA_MODEL_ID` in the backend `.env`. `LLM_MODEL_ALIAS` and `LLM_ENABLE_THINKING` apply only to the optional Qwen provider. CASES holds no bridge token or Codex endpoint. The API also joins the private network for the separate `ddu-embed` RAG endpoint.
 
 Run a gameplay smoke only against a disposable database that already has the selected v2 scenario release active. Set `CASES_ISOLATED_SMOKE=1` and `CASES_SMOKE_DB_NAME` to that database's name:
 
@@ -54,7 +54,7 @@ CASES_ISOLATED_SMOKE=1 CASES_SMOKE_DB_NAME=cases_smoke \
 
 The script checks database identity before creating a session, waits for a real opening, submits three actions including an unexpected one, retries one submission idempotently, and verifies the committed history after reload. It prints the model and turn trace but never prints the bearer capability.
 
-See the [backend runbook](docs/M1_RUNBOOK.md), [shared inference client contract](docs/SHARED_INFERENCE.md), and [M2 development guide](docs/M2_DEVELOPMENT.md). For the current inference deployment and synthetic two-workload tests, use the external [Local-AI-API-LITE repository](https://github.com/MarcusFunt/Local-AI-API-LITE).
+See the [backend runbook](docs/M1_RUNBOOK.md), [shared inference client contract](docs/SHARED_INFERENCE.md), and [M2 development guide](docs/M2_DEVELOPMENT.md). For the current inference deployment and synthetic two-workload tests, use [Cases-AI](https://github.com/IdehistorieCases/Cases-AI).
 
 ## Historical RAG (CASES B3)
 
@@ -76,7 +76,7 @@ uv run --locked --project backend rag validate-eval backend/evaluation_data/vers
 uv run --locked --project backend historical-eval validate --dataset backend/evaluation_data/versailles-1919
 ```
 
-`historical-eval retrieve --split pilot --profiles bm25 --output <outside-the-repository>` runs the lexical pilot without contacting model services. Dense and reranked profiles require the matching live Local-AI-API-LITE workers. Keep generated traces and review packets out of Git.
+`historical-eval retrieve --split pilot --profiles bm25 --output <outside-the-repository>` runs the lexical pilot without contacting model services. Dense and reranked profiles require the matching live Cases-AI retrieval workers. Keep generated traces and review packets out of Git.
 
 ## Development checks
 
@@ -87,4 +87,4 @@ uv run --project backend ruff check backend
 uv run --project backend ruff check --select E4,E7,E9,F,I backend/tests scripts
 ```
 
-GitHub Actions runs the PostgreSQL migrations and backend integration tests, validates the Compose project, and boots the backend with inference absent. GPU/model validation lives in Local-AI-API-LITE; real gameplay smoke is run separately against a declared disposable stack.
+GitHub Actions runs the PostgreSQL migrations and backend integration tests, validates the Compose project, and boots the backend with inference absent. GPU/model validation lives in Cases-AI; real gameplay smoke is run separately against a declared disposable stack.

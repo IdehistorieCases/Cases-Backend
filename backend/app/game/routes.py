@@ -18,7 +18,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.providers import (
     GPT6_LUNA_HIGH,
-    LOCAL_QWEN,
     NarratorUnavailable,
     build_narrator_registry,
     select_provider,
@@ -81,7 +80,7 @@ class CreateSession(BaseModel):
     model_config = ConfigDict(extra="forbid")
     scenario: str = Field(min_length=1, max_length=80)
     role_id: str | None = Field(default=None, min_length=2, max_length=64)
-    narrator: Literal["local_qwen", "gpt6_luna_high"] = LOCAL_QWEN
+    narrator: Literal["local_qwen", "gpt6_luna_high"] = GPT6_LUNA_HIGH
 
 
 class SubmitTurn(BaseModel):

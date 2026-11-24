@@ -2,7 +2,7 @@
 
 ## Scope
 
-This repository owns the history application: PostgreSQL, migrations, the FastAPI service, worker monitoring, and the app-specific Danish diagnostic. Model serving is owned by [Local-AI-API-LITE](https://github.com/MarcusFunt/Local-AI-API-LITE), which runs a pinned vLLM image and model independently. V2 initialization and turns require that inference service; health and database readiness do not.
+This repository owns the history application: PostgreSQL, migrations, the FastAPI service, worker monitoring, and the app-specific Danish diagnostic. Model serving is owned by [Cases-AI](https://github.com/IdehistorieCases/Cases-AI), the canonical CASES inference repository. For the coordinated game startup, use [Cases-Startup](https://github.com/IdehistorieCases/Cases-Startup); the remaining commands here cover backend-only operations and the dated host recovery record below. V2 initialization and turns require a ready selected narrator; health and database readiness do not.
 
 The earlier M1/M1.5 llama.cpp and GGUF setup is historical and is not the current deployment. See [M1.5 validation](M1_5_VALIDATION.md) for measurements from that earlier setup.
 
@@ -67,7 +67,7 @@ docker compose -f deployment/backend/compose.yaml --env-file deployment/backend/
 
 ## Optional real-model diagnostic
 
-Start Local-AI-API-LITE using its own runbook and configuration. It must join `ddu_inference_bus`, advertise the configured `LLM_MODEL_ALIAS` (default `ddu-narrator`), and have no published model port. The backend `turn-worker` uses the network for the optional narrator diagnostic; the API also joins it for the separately configured `ddu-embed` retrieval service. PostgreSQL stays off the inference network.
+Start Cases-AI using its own runbook and configuration. It must join `ddu_inference_bus`, advertise the configured `LLM_MODEL_ALIAS` (default `ddu-narrator`), and have no published model port. The backend `turn-worker` uses the network for the optional narrator diagnostic; the API also joins it for the separately configured `ddu-embed` retrieval service. PostgreSQL stays off the inference network.
 
 With both deployments running, run from this repository root:
 
@@ -77,16 +77,16 @@ bash scripts/m1_smoke.sh
 
 The script checks backend and database health, the private narrator health endpoint, worker/model status, and the history application's strict Danish response schema. It runs the v2 gameplay smoke only when `CASES_ISOLATED_SMOKE=1` and `CASES_SMOKE_DB_NAME` identifies a disposable database; otherwise it skips session creation. Historical evidence queries additionally require the pinned `ddu-embed` retrieval worker.
 
-To check inference failure and recovery, stop and restart the model through the Local-AI-API-LITE project only. The backend and database should remain up; after the heartbeat poll, `/api/v1/status` reports `degraded`, then returns to `ready` when the model is available again. `/readyz` stays 200 because it reflects database readiness. The old pinned llama.cpp runtime and verified GGUF have also been exercised as a rollback path without resetting the application database; the evidence is recorded in Local-AI-API-LITE `docs/CUTOVER_AND_ROLLBACK.md`.
+To check inference failure and recovery, stop and restart the selected provider through Cases-AI only. The backend and database should remain up; after the heartbeat poll, `/api/v1/status` reports `degraded` until its configured primary narrator, ChatGPT 6 Luna, is ready again. `/readyz` stays 200 because it reflects database readiness. The old pinned llama.cpp runtime and verified GGUF have also been exercised as a rollback path without resetting the application database; the historical evidence is recorded in the prior Local-AI-API-LITE deployment notes.
 
 ## Troubleshooting
 
-- **Model health fails:** check the Local-AI-API-LITE service logs, its Docker network attachment, model loading, and GPU availability.
+- **Model health fails:** check the Cases-AI service logs, its Docker network attachment, bridge reachability, and provider status.
 - **Wrong model alias:** confirm `LLM_MODEL_ALIAS` matches an ID returned by the external server's `/v1/models` endpoint.
 - **Worker status is stale:** check the worker container, database connectivity, and `WORKER_POLL_SECONDS` / `WORKER_STALE_SECONDS` settings.
 - **Danish probe rejects output:** inspect probe errors and confirm the external service supports strict JSON schema output and the configured chat-template options. Invalid, empty, and truncated output remains a failure.
 - **Database migration failed:** inspect `migrate` logs and verify PostgreSQL readiness and credentials. Changing `POSTGRES_PASSWORD` does not change the password of an already initialized database volume.
-- **VRAM exhausted:** adjust the externally owned model serving profile or stop competing workloads using Local-AI-API-LITE's runbook.
+- **VRAM exhausted:** adjust the externally owned model serving profile or stop competing workloads using the Cases-AI runbook.
 
 ## Safety and remaining work
 

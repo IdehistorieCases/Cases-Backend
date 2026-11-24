@@ -1,6 +1,6 @@
 # CASES gateway client migration
 
-CASES routes both pinned narrators through Local-AI-API-LITE at
+CASES routes both pinned narrators through the canonical Cases-AI service at
 `http://ddu-gateway:8080` on `ddu_inference_bus`. Set `INFERENCE_GATEWAY_TOKEN`
 to a consumer bearer token issued for CASES. It is separate from gateway admin
 credentials and any provider credentials. Never put provider credentials in the
@@ -16,8 +16,8 @@ structured output validation, and gameplay safety checks.
 
 ## Local rollout
 
-1. Configure the gateway and create the consumer token in the Local-AI-API-LITE
-   deployment. Attach its gateway service to `ddu_inference_bus`.
+1. Configure the gateway and create the consumer token in the Cases-AI
+   deployment. Use Cases-Startup for the complete bridge, gateway, backend, and GUI sequence. Attach its gateway service to `ddu_inference_bus`.
 2. Copy `deployment/backend/.env.example` to `.env`, set the database password
    and `INFERENCE_GATEWAY_TOKEN`, then verify the gateway `/health` and the
    authenticated `/v1/models` response contain the expected enabled model IDs.

@@ -63,7 +63,7 @@ class NarratorRegistry:
                 "id": LOCAL_QWEN,
                 "name": "Local Qwen",
                 "model": local.model_alias,
-                "default": True,
+                "default": False,
                 "configured": self.gateway_configured,
                 "ready": await self.is_ready(LOCAL_QWEN),
             },
@@ -72,7 +72,7 @@ class NarratorRegistry:
                 "name": "GPT-6 Luna High",
                 "model": luna.model_alias,
                 "reasoning_effort": "high",
-                "default": False,
+                "default": True,
                 "configured": self.gateway_configured,
                 "ready": await self.is_ready(GPT6_LUNA_HIGH),
             },
@@ -84,13 +84,13 @@ class NarratorRegistry:
                 "id": LOCAL_QWEN,
                 "name": "Local Qwen",
                 "model": self.providers[LOCAL_QWEN].model_alias,
-                "default": True,
+                "default": False,
             },
             {
                 "id": GPT6_LUNA_HIGH,
                 "name": "GPT-6 Luna High",
                 "model": self.providers[GPT6_LUNA_HIGH].model_alias,
-                "default": False,
+                "default": True,
             },
         ]
 
