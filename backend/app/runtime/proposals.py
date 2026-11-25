@@ -21,6 +21,7 @@ CanonicalDate = Annotated[
 ]
 ClaimText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=500)]
 DialogueText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=600)]
+OutcomeSummary = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=500)]
 PlayerActionText = Annotated[
     str,
     StringConstraints(strip_whitespace=True, min_length=1, max_length=2000),
@@ -146,7 +147,7 @@ class TurnProposal(StrictModel):
     language: Literal["da"]
     narration: Text
     dialogue: list[DialogueLine] = Field(max_length=16)
-    outcome_summary: ShortText
+    outcome_summary: OutcomeSummary
     state_operations: list[StateOperation] = Field(max_length=MAX_STATE_OPERATIONS)
     historical_claims: list[HistoricalEvidenceClaim] = Field(max_length=10)
     author_context_references: list[AuthorContextReference] = Field(max_length=10)

@@ -146,6 +146,23 @@ def test_validates_every_operation_and_keeps_truth_categories_separate():
     assert state["world_date"] == "1888-05-01"
 
 
+def test_accepts_complete_outcome_summary_longer_than_generic_short_text():
+    definition, role, context, state, action, raw = fixtures()
+    summary = (
+        "Aftalen holder parterne ved bordet, fordi den kombinerer sikkerhedsgarantier med en tydelig "
+        "procedure for at løse tvister. Kina får medbestemmelse, mens genopbygningen ikke gøres til "
+        "kollektiv straf; kompromiset forudsætter fortsat samarbejde."
+    )
+    assert len(summary) > 240
+    raw["outcome_summary"] = summary
+
+    accepted = validate(
+        raw, definition=definition, role=role, context=context, state=state, action=action
+    )
+
+    assert accepted.proposal.outcome_summary == summary
+
+
 @pytest.mark.parametrize(
     ("mutate", "issue"),
     [

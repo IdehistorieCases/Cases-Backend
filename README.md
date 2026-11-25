@@ -62,6 +62,12 @@ The additive session evidence endpoint returns only immutable passages that have
 
 The endpoint is `POST /api/v1/sessions/{session_id}/evidence/search` with the existing session bearer token and `{"query":"...","top_k":5}`. Actor, pinned scenario version, phase date, and the reflection postgame view come from persisted session/scenario data. Historical RAG does not participate in the M2 turn queue or dialogue provider. The Danmarks Breve library remains separate and is not automatically eligible as game evidence; see [HISTORY_CORPUS](docs/HISTORY_CORPUS.md).
 
+## Postgame reflection
+
+After a schema-v2 session is complete, clients can request its structured reflection with `POST /api/v1/sessions/{session_id}/reflection` and the same session bearer token. The response includes a qualitative summary, recorded player choices and simulated consequences, learning-objective feedback, and a historical comparison only when approved, citation-ready evidence is available. If evidence is unavailable, the response states that limitation instead of inventing citations. The endpoint returns `409` for an incomplete or invalid session history and `503` when reflection generation or retrieval is temporarily unavailable; clients can retry a `503`.
+
+Turn `outcome_summary` values allow up to 500 characters. This field uses a wider bound than the generic 240-character `ShortText` type so complete cause-and-effect summaries are not cut off mid-sentence.
+
 ## Retrieval evaluation
 
 The offline harness compares BM25, dense Qwen, hybrid, and hybrid plus GTE retrieval. The current dataset has 40 agent-reviewed pilot queries and an empty 0/100 held-out split. Its manifest remains `draft`; no held-out or model-comparison acceptance claim is supported yet. See [RETRIEVAL_EVALUATION](docs/RETRIEVAL_EVALUATION.md) for validation, traces, review provenance, and worker pins.
