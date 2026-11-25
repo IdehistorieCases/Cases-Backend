@@ -45,12 +45,13 @@ async def monitor_inference() -> None:
             ready = await registry.is_ready("local_qwen")
             luna_ready = await registry.is_ready("gpt6_luna_high")
             message = f"qwen={'ready' if ready else 'down'}; luna={'ready' if luna_ready else 'down'}"
+            inference_ready = luna_ready
             try:
-                await record_heartbeat(ready, message)
+                await record_heartbeat(inference_ready, message)
             except Exception:
                 logger.exception("Could not persist worker heartbeat; retrying")
             else:
-                logger.info("worker heartbeat: inference_ready=%s", ready)
+                logger.info("worker heartbeat: inference_ready=%s", inference_ready)
             await asyncio.sleep(settings.worker_poll_seconds)
 
 

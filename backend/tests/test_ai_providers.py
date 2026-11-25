@@ -12,7 +12,7 @@ from app.ai.providers import (
 from app.core.settings import Settings
 
 
-def test_registry_defaults_to_local_qwen_without_gateway_token():
+def test_registry_is_unavailable_without_gateway_token():
     settings = Settings(_env_file=None)
     assert settings.inference_gateway_base_url == "http://ddu-gateway:8080"
     assert settings.inference_gateway_token == ""
@@ -26,8 +26,8 @@ def test_registry_routes_both_models_to_same_gateway_with_same_consumer_token():
     assert registry.luna_configured is True
     assert set(registry.providers) == {"local_qwen", "gpt6_luna_high"}
     assert registry.public_configuration() == [
-        {"id": "local_qwen", "name": "Local Qwen", "model": settings.llm_model_alias, "default": True},
-        {"id": "gpt6_luna_high", "name": "GPT-6 Luna High", "model": "gpt-6-luna", "default": False},
+        {"id": "local_qwen", "name": "Local Qwen", "model": settings.llm_model_alias, "default": False},
+        {"id": "gpt6_luna_high", "name": "GPT-6 Luna High", "model": "gpt-6-luna", "default": True},
     ]
     assert "x" * 32 not in repr(registry.public_configuration())
     local = registry.providers["local_qwen"]

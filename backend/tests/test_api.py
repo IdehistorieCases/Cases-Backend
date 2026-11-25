@@ -48,9 +48,9 @@ async def test_narrator_listing_reports_models_without_secrets(monkeypatch):
     class Registry:
         async def public_status(self):
             return [
-                {"id": "local_qwen", "name": "Local Qwen", "model": "ddu-narrator", "default": True,
+                {"id": "local_qwen", "name": "Local Qwen", "model": "ddu-narrator", "default": False,
                  "configured": True, "ready": False},
-                {"id": "gpt6_luna_high", "name": "GPT-6 Luna High", "model": "gpt-6-luna", "default": False,
+                {"id": "gpt6_luna_high", "name": "GPT-6 Luna High", "model": "gpt-6-luna", "default": True,
                  "reasoning_effort": "high", "configured": False, "ready": False},
             ]
 
