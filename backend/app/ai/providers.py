@@ -58,6 +58,8 @@ class NarratorRegistry:
     async def public_status(self) -> list[dict]:
         local = self.providers[LOCAL_QWEN]
         luna = self.providers[GPT6_LUNA_HIGH]
+        gateway_healthy = self.gateway_configured and await luna.is_ready()
+        available_models = await luna.available_models() if gateway_healthy else set()
         return [
             {
                 "id": LOCAL_QWEN,
@@ -65,7 +67,7 @@ class NarratorRegistry:
                 "model": local.model_alias,
                 "default": False,
                 "configured": self.gateway_configured,
-                "ready": await self.is_ready(LOCAL_QWEN),
+                "ready": local.model_alias in available_models,
             },
             {
                 "id": GPT6_LUNA_HIGH,
@@ -74,7 +76,7 @@ class NarratorRegistry:
                 "reasoning_effort": "high",
                 "default": True,
                 "configured": self.gateway_configured,
-                "ready": await self.is_ready(GPT6_LUNA_HIGH),
+                "ready": luna.model_alias in available_models,
             },
         ]
 

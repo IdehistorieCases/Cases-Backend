@@ -6,8 +6,12 @@ import httpx
 from sqlalchemy import func
 from sqlalchemy.dialects.postgresql import insert
 
-from app.ai.providers import build_narrator_registry
-from app.core.settings import WORKER_HEALTH_TIMEOUT_SECONDS, get_settings
+from app.ai.providers import (
+    GPT6_LUNA_HIGH,
+    LOCAL_QWEN,
+    build_narrator_registry,
+)
+from app.core.settings import INFERENCE_READINESS_TIMEOUT_SECONDS, get_settings
 from app.db.connection import engine
 from app.db.models import ServiceHeartbeat
 from app.game.turn_worker import run_turn_worker
@@ -38,12 +42,16 @@ async def record_heartbeat(inference_ready: bool, message: str) -> None:
 async def monitor_inference() -> None:
     settings = get_settings()
     async with httpx.AsyncClient(
-        timeout=httpx.Timeout(WORKER_HEALTH_TIMEOUT_SECONDS), trust_env=False
+        timeout=httpx.Timeout(INFERENCE_READINESS_TIMEOUT_SECONDS), trust_env=False
     ) as client:
         registry = build_narrator_registry(settings, client)
         while True:
-            ready = await registry.is_ready("local_qwen")
-            luna_ready = await registry.is_ready("gpt6_luna_high")
+            statuses = {
+                item["id"]: item["ready"]
+                for item in await registry.public_status()
+            }
+            ready = statuses.get(LOCAL_QWEN, False)
+            luna_ready = statuses.get(GPT6_LUNA_HIGH, False)
             message = f"qwen={'ready' if ready else 'down'}; luna={'ready' if luna_ready else 'down'}"
             inference_ready = luna_ready
             try:

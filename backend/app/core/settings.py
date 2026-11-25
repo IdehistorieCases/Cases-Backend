@@ -8,7 +8,7 @@ from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import URL
 
-WORKER_HEALTH_TIMEOUT_SECONDS = 4.0
+INFERENCE_READINESS_TIMEOUT_SECONDS = 8.0
 
 
 class Settings(BaseSettings):
@@ -146,10 +146,11 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_worker_timing(self) -> Self:
-        if self.worker_stale_seconds <= self.worker_poll_seconds + WORKER_HEALTH_TIMEOUT_SECONDS:
+        max_probe_seconds = 2 * INFERENCE_READINESS_TIMEOUT_SECONDS
+        if self.worker_stale_seconds <= self.worker_poll_seconds + max_probe_seconds:
             raise ValueError(
                 "worker_stale_seconds must exceed worker_poll_seconds plus the "
-                "4-second health-check timeout; allow extra time for database writes"
+                "health and model-list readiness timeouts; allow extra time for database writes"
             )
         return self
 

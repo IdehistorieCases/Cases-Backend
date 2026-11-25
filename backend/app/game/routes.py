@@ -22,7 +22,7 @@ from app.ai.providers import (
     build_narrator_registry,
     select_provider,
 )
-from app.core.settings import get_settings
+from app.core.settings import INFERENCE_READINESS_TIMEOUT_SECONDS, get_settings
 from app.db.connection import session_factory
 from app.db.models import (
     CommittedTurn,
@@ -258,7 +258,7 @@ async def list_scenarios():
 async def list_narrators():
     settings = get_settings()
     async with httpx.AsyncClient(
-        timeout=httpx.Timeout(4.0), trust_env=False
+        timeout=httpx.Timeout(INFERENCE_READINESS_TIMEOUT_SECONDS), trust_env=False
     ) as client:
         return await build_narrator_registry(settings, client).public_status()
 
@@ -478,7 +478,8 @@ async def create_session(
             if payload.narrator == GPT6_LUNA_HIGH:
                 settings = get_settings()
                 async with httpx.AsyncClient(
-                    timeout=httpx.Timeout(4.0), trust_env=False
+                    timeout=httpx.Timeout(INFERENCE_READINESS_TIMEOUT_SECONDS),
+                    trust_env=False,
                 ) as client:
                     registry = build_narrator_registry(settings, client)
                     if not registry.luna_configured or not await registry.is_ready(GPT6_LUNA_HIGH):

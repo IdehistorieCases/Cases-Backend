@@ -110,19 +110,26 @@ class InferenceClient:
         except httpx.HTTPError:
             return False
 
-    async def serves_expected_model(self) -> bool:
-        """Explicit setup check; keep model-list polling out of the health loop."""
+    async def available_models(self) -> set[str]:
+        """Return model IDs reported by the configured inference gateway."""
         try:
             response = await self.client.get(f"{self.base_url}/v1/models", headers=self.headers)
             response.raise_for_status()
             document = response.json()
         except (httpx.HTTPError, ValueError):
-            return False
+            return set()
         models = document.get("data") if isinstance(document, dict) else None
-        return isinstance(models, list) and any(
-            isinstance(model, dict) and model.get("id") == self.model_alias
+        if not isinstance(models, list):
+            return set()
+        return {
+            model["id"]
             for model in models
-        )
+            if isinstance(model, dict) and isinstance(model.get("id"), str)
+        }
+
+    async def serves_expected_model(self) -> bool:
+        """Check the model list for this client's configured alias."""
+        return self.model_alias in await self.available_models()
 
     async def generate_structured(
         self,
