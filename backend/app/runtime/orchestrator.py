@@ -41,7 +41,7 @@ from app.runtime.proposals import (
 from app.runtime.validator import ProposalValidationError, validate_turn_proposal
 from app.scenarios.schema_v2 import ScenarioDefinitionV2
 
-TURN_PROMPT_VERSION = "freeform-turn-da-v13"
+TURN_PROMPT_VERSION = "freeform-turn-da-v14"
 TURN_SCHEMA_VERSION = "turn-agent-response-schema-v2"
 MAX_TURN_TOKENS = 8192
 MAX_FINAL_CORRECTIONS = 2
@@ -100,6 +100,12 @@ ikke et spørgsmål, et hypotetisk forslag eller et kreativt sidespor som en gem
 Brug kun aktører i current_state.present_actor_ids til dialog og aktørhandlinger. En aktør,
 der ikke er til stede, må ikke få replikker; hvis spilleren nævner en fraværende aktør, så
 lad den valgte rolle svare eller notere ønsket om at invitere vedkommende senere.
+Brug context.actor_profiles til at fastholde hver delegations mål og vidensgrænser gennem
+hele forhandlingen. Skift ikke en delegations grundholdning uden en konkret, synlig indrømmelse
+eller et argument, der forklarer ændringen.
+I dialogue skal du returnere præcis én kort replik fra hver tilstedeværende aktør bortset
+fra actor_id i context.selected_role. Brug context.actor_profiles og aktørens navn, mål og
+begrænsninger; fortæl ikke svaret kun gennem narration. Skriv ikke spillerens egen delegation som en NPC-replik.
 Hold fortællingen på højst ca. 800 tegn, og afslut alle sætninger helt.
 Returnér kun et JSON-objekt, der opfylder skemaet."""
 
@@ -146,6 +152,14 @@ REPAIR_GUIDANCE = {
     ),
     "unknown_actor_id": "Brug kun actor_id fra allowed_actor_ids.",
     "inaccessible_actor": "Brug kun aktører, der er til stede i current_state.",
+    "dialogue_coverage_incomplete": (
+        "Returnér præcis én kort dialogue-replik fra hver tilstedeværende aktør bortset fra "
+        "context.selected_role.actor_id. Brug context.actor_profiles og current_state."
+    ),
+    "duplicate_dialogue_actor": (
+        "Hver tilstedeværende modpart skal have præcis én dialogue-replik. Fjern gentagne "
+        "replikker fra samme actor_id."
+    ),
     "unknown_objective_id": "Brug kun objective_id fra allowed_objective_ids.",
     "unknown_thread_id": "Løs kun en tråd, der allerede findes som åben i current_state.",
     "thread_not_open": "Løs kun en tråd med status open.",

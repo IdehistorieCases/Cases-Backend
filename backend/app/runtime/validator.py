@@ -304,8 +304,16 @@ def validate_turn_proposal(
         elif actor_id not in accessible_actors:
             issues.append("inaccessible_actor")
 
-    for line in proposal.dialogue:
-        check_actor(line.actor_id)
+    dialogue_actor_ids = [line.actor_id for line in proposal.dialogue]
+    for actor_id in dialogue_actor_ids:
+        check_actor(actor_id)
+    if len(dialogue_actor_ids) != len(set(dialogue_actor_ids)):
+        issues.append("duplicate_dialogue_actor")
+    expected_dialogue_actor_ids = accessible_actors - {
+        role.actor_id if role is not None else ""
+    }
+    if set(dialogue_actor_ids) != expected_dialogue_actor_ids:
+        issues.append("dialogue_coverage_incomplete")
 
     existing_threads = current_state.get("open_threads", [])
     if not isinstance(existing_threads, list):

@@ -669,6 +669,16 @@ async def build_session_context(
         },
         "generation_mode": mode,
         "world_date": world_date.isoformat(),
+        "actor_profiles": [
+            {
+                "id": item.id,
+                "name": item.name,
+                "description": item.description,
+                "motivations": list(item.motivations),
+                "knowledge_constraints": list(item.knowledge_constraints),
+            }
+            for item in definition.actors
+        ],
         "selected_role": {
             "id": role.id,
             "title": role.title,

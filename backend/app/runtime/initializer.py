@@ -19,19 +19,23 @@ from app.runtime.context import SessionPromptContext
 from app.runtime.schemas import HistoricalClaimProposal, OpeningProposal
 from app.scenarios.schema_v2 import ScenarioDefinitionV2
 
-OPENING_PROMPT_VERSION = "opening-da-v3"
+OPENING_PROMPT_VERSION = "opening-da-v4"
 OPENING_SCHEMA_VERSION = "opening-schema-v1"
-CONTEXT_VERSION = "session-context-v1"
+CONTEXT_VERSION = "session-context-v2"
 MAX_OPENING_TOKENS = 5632
 MAX_PROMPT_CHARS = 48_000
 
 OPENING_SCHEMA = OpeningProposal.model_json_schema()
+PINNED_PRESENT_ACTOR_IDS = {
+    ("versailles-1919", "3.1-ai"): frozenset({"britain", "france", "china"}),
+}
 
 SYSTEM_PROMPT = """Du er fortæller i et dansk, tekstbaseret historisk læringsspil.
 Generér én kort, engagerende åbning ud fra den vedlagte SQL-forankrede scenariekontekst.
 Brug kun den valgte rolle og kontekstens autoriserede verdensdato. Kopiér role_id præcist
 fra opening_authorizations.role_id. Kopiér aktør- og læringsmåls-ID'er fra
-opening_authorizations; brug aldrig aktørnavne som ID'er.
+opening_authorizations; brug aldrig aktørnavne som ID'er. Hvis
+required_present_actor_ids ikke er tom, skal present_actor_ids være præcis den liste.
 Historiske udsagn må kun nævne belæg ved at bruge passage-ID'er,
 der findes i de medsendte evidenspassager med citation_ready=true. Hvis der ikke er egnede
 passager, skal historical_claims være tom. Skeln mellem historisk belæg og simuleret forløb.
@@ -101,6 +105,14 @@ def _proposal_issues(
     actor_ids = {actor.id for actor in definition.actors}
     if any(actor_id not in actor_ids for actor_id in proposal.present_actor_ids):
         issues.append("unknown_actor_id")
+    required_present_actor_ids = PINNED_PRESENT_ACTOR_IDS.get(
+        (definition.slug, definition.version)
+    )
+    if (
+        required_present_actor_ids is not None
+        and set(proposal.present_actor_ids) != required_present_actor_ids
+    ):
+        issues.append("present_actor_roster_mismatch")
     if selected_role is not None and selected_role.actor_id not in proposal.present_actor_ids:
         issues.append("selected_actor_missing")
 
@@ -305,6 +317,11 @@ async def generate_opening(
             "role_id": role_id,
             "world_date": context.world_date.isoformat(),
             "allowed_actor_ids": sorted(actor.id for actor in definition.actors),
+            "required_present_actor_ids": sorted(
+                PINNED_PRESENT_ACTOR_IDS.get(
+                    (definition.slug, definition.version), frozenset()
+                )
+            ),
             "allowed_objective_ids": sorted(
                 objective.id for objective in definition.learning_objectives
             ),
@@ -368,6 +385,10 @@ async def generate_opening(
                         (
                             "selected_actor_missing",
                             f"present_actor_ids skal indeholde {selected_role.actor_id}.",
+                        ),
+                        (
+                            "present_actor_roster_mismatch",
+                            "present_actor_ids skal være præcis opening_authorizations.required_present_actor_ids.",
                         ),
                         (
                             "unknown_objective_id",

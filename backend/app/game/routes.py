@@ -79,6 +79,7 @@ SESSION_CAPABILITY_PATTERN = re.compile(r"^[A-Za-z0-9_-]{43}$")
 class CreateSession(BaseModel):
     model_config = ConfigDict(extra="forbid")
     scenario: str = Field(min_length=1, max_length=80)
+    scenario_version: str | None = Field(default=None, min_length=1, max_length=32)
     role_id: str | None = Field(default=None, min_length=2, max_length=64)
     narrator: Literal["local_qwen", "gpt6_luna_high"] = GPT6_LUNA_HIGH
 
@@ -376,6 +377,10 @@ async def create_session(
                         or scenario.slug != payload.scenario
                         or existing.narrator != payload.narrator
                         or expected_role != existing.player_role_id
+                        or (
+                            payload.scenario_version is not None
+                            and scenario.version != payload.scenario_version
+                        )
                         or not hmac.compare_digest(
                             existing.capability_hash, requested_capability_hash
                         )
@@ -396,6 +401,18 @@ async def create_session(
             scenario = await get_active_scenario(db, payload.scenario, lock=True)
             if scenario is None:
                 raise HTTPException(status_code=404, detail="Scenario not found")
+            if (
+                payload.scenario_version is not None
+                and scenario.version != payload.scenario_version
+            ):
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "SCENARIO_VERSION_MISMATCH",
+                        "expected": payload.scenario_version,
+                        "active": scenario.version,
+                    },
+                )
             if payload.narrator == GPT6_LUNA_HIGH and scenario.schema_version != 2:
                 raise HTTPException(
                     status_code=422,
