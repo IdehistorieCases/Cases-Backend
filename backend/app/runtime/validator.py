@@ -15,6 +15,10 @@ from app.runtime.proposals import (
     HistoricalClaimRecordedEvent,
     HistoricalEvidenceClaim,
     LearningObservationRecordedEvent,
+    NegotiationBoardInitializedEvent,
+    NegotiationIssueSeed,
+    NegotiationIssueUpdatedEvent,
+    NegotiationTurnAssessedEvent,
     OpenThreadOperation,
     PlayerClaimRecordedEvent,
     RecordDecisionOperation,
@@ -31,6 +35,7 @@ from app.runtime.proposals import (
     TurnProposal,
     WorldTimeAdvancedEvent,
 )
+from app.runtime.negotiation_state import initial_negotiation_issue_state, negotiation_issue_seeds
 from app.runtime.state import StateProjectionError, project_state
 from app.scenarios.schema_v2 import ScenarioDefinitionV2
 
@@ -315,6 +320,52 @@ def validate_turn_proposal(
     if set(dialogue_actor_ids) != expected_dialogue_actor_ids:
         issues.append("dialogue_coverage_incomplete")
 
+    issue_definitions = {issue.id: issue for issue in definition.negotiation_issues}
+    issue_states = current_state.get("negotiation_issues", [])
+    if not isinstance(issue_states, list):
+        issues.append("invalid_current_state")
+        issue_states = []
+    board_needs_initialization = not issue_states and bool(issue_definitions)
+    if board_needs_initialization:
+        issue_states = initial_negotiation_issue_state(definition)
+    state_issue_ids = {
+        item.get("id")
+        for item in issue_states
+        if isinstance(item, dict) and isinstance(item.get("id"), str)
+    }
+    if state_issue_ids != set(issue_definitions):
+        issues.append("invalid_current_state")
+    issue_statuses: dict[str, str] = {}
+    updated_issue_ids: set[str] = set()
+    normalized_action = " ".join(player_action.casefold().split())
+    for update in proposal.issue_updates:
+        issue_definition = issue_definitions.get(update.issue_id)
+        if issue_definition is None:
+            issues.append("unknown_negotiation_issue")
+            continue
+        if update.issue_id in updated_issue_ids:
+            issues.append("duplicate_negotiation_update")
+        updated_issue_ids.add(update.issue_id)
+        normalized_excerpt = " ".join(update.player_action_excerpt.casefold().split())
+        if normalized_excerpt not in normalized_action:
+            issues.append("negotiation_proposal_not_grounded")
+        expected_responders = set(issue_definition.required_responder_ids)
+        response_actor_ids = [response.actor_id for response in update.responses]
+        if set(response_actor_ids) != expected_responders or len(response_actor_ids) != len(expected_responders):
+            issues.append("negotiation_responder_mismatch")
+        for actor_id in response_actor_ids:
+            check_actor(actor_id)
+        if role is not None and role.actor_id in expected_responders:
+            issues.append("negotiation_responder_mismatch")
+        stances = [response.stance for response in update.responses]
+        issue_statuses[update.issue_id] = (
+            "agreed"
+            if stances and all(stance == "accept" for stance in stances)
+            else "contested"
+            if any(stance in {"counter", "reject"} for stance in stances)
+            else "proposed"
+        )
+
     existing_threads = current_state.get("open_threads", [])
     if not isinstance(existing_threads, list):
         issues.append("invalid_current_state")
@@ -431,6 +482,42 @@ def validate_turn_proposal(
     assert role is not None
     event_date = context.world_date.isoformat()
     events: list[StateEvent] = []
+    if board_needs_initialization:
+        events.append(
+            NegotiationBoardInitializedEvent(
+                event_type="negotiation_board_initialized",
+                issues=[
+                    NegotiationIssueSeed.model_validate(seed)
+                    for seed in negotiation_issue_seeds(definition)
+                ],
+            )
+        )
+    next_turn = int(turn_number) + 1
+    events.append(
+        NegotiationTurnAssessedEvent(
+            event_type="negotiation_turn_assessed",
+            turn_number=next_turn,
+            consequence=proposal.negotiation_assessment.consequence,
+            remaining_disagreement=proposal.negotiation_assessment.remaining_disagreement,
+        )
+    )
+    events.extend(
+        NegotiationIssueUpdatedEvent(
+            event_type="negotiation_issue_updated",
+            issue_id=update.issue_id,
+            turn_number=next_turn,
+            player_action_excerpt=update.player_action_excerpt,
+            proposer_role_id=role.id,
+            authority="advisory",
+            binding_status="non_binding",
+            status=issue_statuses[update.issue_id],
+            recommendation=update.recommendation,
+            responses=update.responses,
+            consequence=update.consequence,
+            remaining_disagreement=update.remaining_disagreement,
+        )
+        for update in proposal.issue_updates
+    )
     events.extend(
         HistoricalClaimRecordedEvent(
             event_type="historical_claim_recorded",

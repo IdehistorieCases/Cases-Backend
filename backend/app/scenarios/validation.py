@@ -127,6 +127,7 @@ def validate_v2_definition(definition: ScenarioDefinitionV2) -> None:
         "learning objective": [item.id for item in definition.learning_objectives],
         "content key": [item.key for item in definition.content_items],
         "optional beat": [item.id for item in definition.optional_beats],
+        "negotiation issue": [item.id for item in definition.negotiation_issues],
     }
     errors: list[str] = []
     seen_ids: dict[str, str] = {}
@@ -158,6 +159,14 @@ def validate_v2_definition(definition: ScenarioDefinitionV2) -> None:
     for role in definition.roles:
         if role.actor_id not in actors:
             errors.append(f"role {role.id!r} references unknown actor {role.actor_id!r}")
+
+    for issue in definition.negotiation_issues:
+        unknown_responders = sorted(set(issue.required_responder_ids) - actors)
+        if unknown_responders:
+            errors.append(
+                f"negotiation issue {issue.id!r} references unknown responder(s): "
+                + ", ".join(unknown_responders)
+            )
 
     unknown_completion_objectives = sorted(
         set(definition.completion_policy.objective_ids) - objectives

@@ -2,7 +2,7 @@
 from datetime import date
 from typing import Annotated, Literal, Union
 
-from pydantic import Field, StringConstraints, field_validator, model_validator
+from pydantic import Field, StrictInt, StringConstraints, field_validator, model_validator
 
 from app.scenarios.schema import Id, ShortText, StrictModel, Text
 
@@ -26,6 +26,10 @@ PlayerActionText = Annotated[
     str,
     StringConstraints(strip_whitespace=True, min_length=1, max_length=2000),
 ]
+ActionExcerpt = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=2, max_length=240),
+]
 
 
 def _canonical_date(value: str) -> str:
@@ -41,6 +45,33 @@ def _canonical_date(value: str) -> str:
 class DialogueLine(StrictModel):
     actor_id: Id
     text: DialogueText
+
+
+class DelegationIssueResponse(StrictModel):
+    actor_id: Id
+    stance: Literal["accept", "counter", "reject", "defer"]
+    position: ShortText
+    counteroffer: Text | None = None
+
+    @model_validator(mode="after")
+    def counter_requires_a_term(self):
+        if self.stance == "counter" and not self.counteroffer:
+            raise ValueError("a counter response requires a counteroffer")
+        return self
+
+
+class NegotiationIssueUpdate(StrictModel):
+    issue_id: Id
+    player_action_excerpt: ActionExcerpt
+    recommendation: Text
+    responses: list[DelegationIssueResponse] = Field(max_length=16)
+    consequence: ShortText
+    remaining_disagreement: ShortText
+
+
+class NegotiationAssessment(StrictModel):
+    consequence: ShortText
+    remaining_disagreement: ShortText
 
 
 class RecordDecisionOperation(StrictModel):
@@ -148,6 +179,8 @@ class TurnProposal(StrictModel):
     narration: Text
     dialogue: list[DialogueLine] = Field(max_length=16)
     outcome_summary: OutcomeSummary
+    negotiation_assessment: NegotiationAssessment
+    issue_updates: list[NegotiationIssueUpdate] = Field(max_length=12)
     state_operations: list[StateOperation] = Field(max_length=MAX_STATE_OPERATIONS)
     historical_claims: list[HistoricalEvidenceClaim] = Field(max_length=10)
     author_context_references: list[AuthorContextReference] = Field(max_length=10)
@@ -293,6 +326,58 @@ class LearningObservationRecordedEvent(LearningObservation):
         return _canonical_date(value)
 
 
+class NegotiationIssueSeed(StrictModel):
+    id: Id
+    title: ShortText
+    description: Text
+    baseline_disagreement: Text
+    required_responder_ids: list[Id] = Field(min_length=1, max_length=16)
+
+    @field_validator("required_responder_ids")
+    @classmethod
+    def unique_responder_ids(cls, values: list[str]) -> list[str]:
+        if len(values) != len(set(values)):
+            raise ValueError("required_responder_ids must be unique")
+        return values
+
+
+class NegotiationBoardInitializedEvent(StrictModel):
+    event_type: Literal["negotiation_board_initialized"]
+    issues: list[NegotiationIssueSeed] = Field(min_length=1, max_length=12)
+
+
+class NegotiationTurnAssessedEvent(StrictModel):
+    event_type: Literal["negotiation_turn_assessed"]
+    turn_number: StrictInt = Field(ge=1)
+    consequence: ShortText
+    remaining_disagreement: ShortText
+
+
+class NegotiationIssueUpdatedEvent(StrictModel):
+    event_type: Literal["negotiation_issue_updated"]
+    issue_id: Id
+    turn_number: StrictInt = Field(ge=1)
+    player_action_excerpt: ActionExcerpt
+    proposer_role_id: Id
+    authority: Literal["advisory"]
+    binding_status: Literal["non_binding"]
+    status: Literal["open", "proposed", "contested", "agreed"]
+    recommendation: Text
+    responses: list[DelegationIssueResponse] = Field(min_length=1, max_length=16)
+    consequence: ShortText
+    remaining_disagreement: ShortText
+
+    @field_validator("responses")
+    @classmethod
+    def unique_response_actors(
+        cls, values: list[DelegationIssueResponse]
+    ) -> list[DelegationIssueResponse]:
+        actor_ids = [item.actor_id for item in values]
+        if len(actor_ids) != len(set(actor_ids)):
+            raise ValueError("responses must contain one entry per actor")
+        return values
+
+
 class SceneCompletedEvent(StrictModel):
     event_type: Literal["scene_completed"]
     reason: Literal["player_end", "objectives_complete", "turn_limit", "validated_terminal"] = (
@@ -312,6 +397,9 @@ StateEvent = Annotated[
         AuthorContextReferencedEvent,
         PlayerClaimRecordedEvent,
         LearningObservationRecordedEvent,
+        NegotiationBoardInitializedEvent,
+        NegotiationTurnAssessedEvent,
+        NegotiationIssueUpdatedEvent,
         SceneCompletedEvent,
     ],
     Field(discriminator="event_type"),

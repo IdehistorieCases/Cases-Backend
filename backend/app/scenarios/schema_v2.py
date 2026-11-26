@@ -2,7 +2,7 @@
 from datetime import date
 from typing import Annotated, Literal
 
-from pydantic import Field, StrictBool, StrictInt, StringConstraints, model_validator
+from pydantic import Field, StrictBool, StrictInt, StringConstraints, field_validator, model_validator
 
 from app.scenarios.schema import Id, LongText, ShortText, SourceId, StrictModel, Text
 
@@ -84,6 +84,20 @@ class ContentItemV2(StrictModel):
     source_refs: list[SourceId] = Field(default_factory=list, max_length=256)
 
 
+class NegotiationIssueV2(StrictModel):
+    id: StableToken
+    title: ShortText
+    description: Text
+    baseline_disagreement: Text
+    required_responder_ids: list[Id] = Field(min_length=1, max_length=16)
+
+    @field_validator("required_responder_ids")
+    @classmethod
+    def unique_responder_ids(cls, values: list[str]) -> list[str]:
+        _require_unique(values, "required_responder_ids")
+        return values
+
+
 class CompletionPolicyV2(StrictModel):
     mode: Literal["goal_or_player_end", "objectives_complete", "player_end"]
     min_meaningful_decisions: StrictInt = Field(ge=0, le=100)
@@ -119,6 +133,7 @@ class ScenarioDefinitionV2(StrictModel):
     chronology: ChronologyV2
     interaction_guidance: InteractionGuidanceV2
     content_items: list[ContentItemV2] = Field(min_length=1, max_length=128)
+    negotiation_issues: list[NegotiationIssueV2] = Field(default_factory=list, max_length=12)
     completion_policy: CompletionPolicyV2
     optional_beats: list[OptionalBeatV2] = Field(default_factory=list, max_length=100)
     source_refs: list[SourceId] = Field(max_length=256)
@@ -135,6 +150,12 @@ class ScenarioDefinitionV2(StrictModel):
         for beat in self.optional_beats:
             _require_unique(beat.objective_ids, f"optional beat {beat.id!r} objective_ids")
         _require_unique(self.completion_policy.objective_ids, "completion_policy.objective_ids")
+        _require_unique([issue.id for issue in self.negotiation_issues], "negotiation_issues")
+        for issue in self.negotiation_issues:
+            _require_unique(
+                issue.required_responder_ids,
+                f"negotiation issue {issue.id!r} required_responder_ids",
+            )
         return self
 
 

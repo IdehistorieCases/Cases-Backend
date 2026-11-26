@@ -24,6 +24,7 @@ from app.db.connection import session_factory
 from app.db.models import CommittedTurn, GameEvent, GameSession, ScenarioVersion
 from app.rag.policy import is_eligible
 from app.rag.retrieval import RAG_NO_EVIDENCE
+from app.runtime.negotiation_state import initial_negotiation_issue_state
 from app.runtime.context import (
     DEFAULT_RETRIEVAL_TOP_K,
     ContextBuildFailure,
@@ -41,8 +42,8 @@ from app.runtime.proposals import (
 from app.runtime.validator import ProposalValidationError, validate_turn_proposal
 from app.scenarios.schema_v2 import ScenarioDefinitionV2
 
-TURN_PROMPT_VERSION = "freeform-turn-da-v14"
-TURN_SCHEMA_VERSION = "turn-agent-response-schema-v2"
+TURN_PROMPT_VERSION = "freeform-turn-da-v15-negotiation"
+TURN_SCHEMA_VERSION = "turn-agent-response-schema-v3"
 MAX_TURN_TOKENS = 8192
 MAX_FINAL_CORRECTIONS = 2
 MAX_TURN_PROMPT_CHARS = 48_000
@@ -57,6 +58,8 @@ PROMPT_STATE_LIST_LIMITS = {
     "author_context_references": 8,
     "player_claims": 6,
     "learning_observations": 12,
+    "negotiation_issues": 12,
+    "negotiation_history": 8,
 }
 TURN_SCHEMA = TurnAgentResponse.model_json_schema()
 logger = logging.getLogger(__name__)
@@ -106,6 +109,23 @@ eller et argument, der forklarer ændringen.
 I dialogue skal du returnere præcis én kort replik fra hver tilstedeværende aktør bortset
 fra actor_id i context.selected_role. Brug context.actor_profiles og aktørens navn, mål og
 begrænsninger; fortæl ikke svaret kun gennem narration. Skriv ikke spillerens egen delegation som en NPC-replik.
+
+Negotiation_contract: spilleren er en fiktiv britisk rådgiver og har kun rådgivende myndighed.
+Hver endelig proposal skal indeholde negotiation_assessment med turens konkrete konsekvens og
+den uenighed, der stadig består. Brug issue_updates kun når den aktuelle spillerhandling faktisk
+fremsætter, ændrer, accepterer, afviser eller trækker et konkret forslag til et kendt issue.
+Gengiv aldrig en spilleranbefaling som en bindende britisk beslutning eller en underskrevet traktat.
+Udfyld player_action_excerpt med en ordret, sammenhængende del af player_action_exact, så
+backend kan kontrollere, at forslaget kom fra spilleren. Brug kun issue_id fra negotiation_issues.
+For hvert issue update skal du beskrive rådgiverens anbefaling, én reaktion fra hver
+required_responder_ids delegation med stance accept/counter/reject/defer, samt konsekvens og
+resterende uenighed. Counter kræver et konkret counteroffer. Opdatér ikke andre issues af sig selv.
+Status beregnes af backend: accept fra alle giver kun foreløbig enighed; counter eller reject giver
+omstridt; andre reaktioner efter et forslag giver foreslået. Ingen status kan gøre forslaget
+bindende. Hvis handlingen kun er et spørgsmål eller en diskussion uden konkret term, returnér
+issue_updates=[] og forklar i assessment at der ikke blev fremsat et nyt bindende vilkår.
+Spørgsmål, hypotetiske muligheder og forslag fra modparter må ikke gemmes som spillerens tilbud.
+
 Hold fortællingen på højst ca. 800 tegn, og afslut alle sætninger helt.
 Returnér kun et JSON-objekt, der opfylder skemaet."""
 
@@ -161,6 +181,14 @@ REPAIR_GUIDANCE = {
         "replikker fra samme actor_id."
     ),
     "unknown_objective_id": "Brug kun objective_id fra allowed_objective_ids.",
+    "unknown_negotiation_issue": "Brug kun issue_id fra current_state.negotiation_issues.",
+    "duplicate_negotiation_update": "Returnér højst én opdatering pr. issue.",
+    "negotiation_proposal_not_grounded": (
+        "player_action_excerpt skal være ordret sammenhængende tekst fra player_action_exact."
+    ),
+    "negotiation_responder_mismatch": (
+        "Returnér præcis én issue-respons fra hver delegation i issue.required_responder_ids."
+    ),
     "unknown_thread_id": "Løs kun en tråd, der allerede findes som åben i current_state.",
     "thread_not_open": "Løs kun en tråd med status open.",
     "completion_not_supported": "Sæt scene_status til continue og giv next_player_prompt.",
@@ -303,6 +331,14 @@ def _build_turn_prompt(
                 and isinstance(thread.get("status"), str)
             ],
             "current_relations": current_state.get("relations", []),
+            "negotiation_issue_ids": [
+                issue.get("id")
+                for issue in current_state.get("negotiation_issues", [])
+                if isinstance(issue, dict) and isinstance(issue.get("id"), str)
+            ],
+            "player_authority": (
+                "advisory_only; the fictional British adviser cannot bind Britain or sign a treaty"
+            ),
             "player_action_exact": player_action,
         },
         "available_tools": (
@@ -446,6 +482,15 @@ def _bounded_prompt_state(state: dict) -> dict:
         "historical_claims": {"claim": 360},
         "player_claims": {"text": 360},
         "learning_observations": {"observation": 240},
+        "negotiation_history": {"consequence": 240, "remaining_disagreement": 300},
+        "negotiation_issues": {
+            "title": 100,
+            "description": 260,
+            "baseline_disagreement": 280,
+            "current_recommendation": 420,
+            "last_consequence": 240,
+            "remaining_disagreement": 300,
+        },
     }
     omitted = {}
     for field, limit in PROMPT_STATE_LIST_LIMITS.items():
@@ -466,6 +511,12 @@ def _bounded_prompt_state(state: dict) -> dict:
                     bounded[key] = value[:max_chars] + "…"
             selected.append(bounded)
         result[field] = selected
+    for issue in result.get("negotiation_issues", []):
+        if not isinstance(issue, dict):
+            continue
+        history = issue.get("history")
+        if isinstance(history, list):
+            issue["history"] = history[-4:]
     if any(omitted.values()):
         result["omitted_projection_history"] = omitted
     return result
@@ -495,6 +546,10 @@ def _visible_exchange(turn_number: int, result: object) -> dict | None:
         "reply": clipped(result.get("reply"), 1200),
         "dialogue": visible_dialogue,
         "outcome_summary": clipped(result.get("outcome_summary"), 500),
+        "negotiation_assessment": result.get("negotiation_assessment"),
+        "issue_updates": result.get("issue_updates", [])[:6]
+        if isinstance(result.get("issue_updates"), list)
+        else [],
         "next_player_prompt": clipped(result.get("next_player_prompt"), 700),
         "scene_status": result.get("scene_status"),
     }
@@ -673,6 +728,9 @@ class TurnOrchestrator:
             raise TurnGenerationFailure("INFERENCE_UNAVAILABLE", retryable=True)
 
         prompt_state = _bounded_prompt_state(session.state)
+        if not prompt_state.get("negotiation_issues") and definition.negotiation_issues:
+            prompt_state["negotiation_issues"] = initial_negotiation_issue_state(definition)
+            prompt_state.setdefault("negotiation_history", [])
         if visible_turns and visible_turns[-1].get("next_player_prompt"):
             prompt_state["player_prompt"] = visible_turns[-1]["next_player_prompt"]
         allowed_actor_ids = sorted(actor.id for actor in definition.actors)

@@ -5,7 +5,12 @@ from typing import Iterable
 
 from pydantic import TypeAdapter, ValidationError
 
-from app.runtime.proposals import StateEvent
+from app.runtime.proposals import (
+    NegotiationBoardInitializedEvent,
+    NegotiationIssueUpdatedEvent,
+    NegotiationTurnAssessedEvent,
+    StateEvent,
+)
 
 _EVENT_ADAPTER = TypeAdapter(StateEvent)
 
@@ -40,6 +45,8 @@ def _validated_initial_state(initial_state: dict) -> dict:
         "author_context_references",
         "player_claims",
         "learning_observations",
+        "negotiation_issues",
+        "negotiation_history",
     ):
         if field not in state:
             state[field] = []
@@ -67,6 +74,30 @@ def _validated_initial_state(initial_state: dict) -> dict:
             or not isinstance(relation.get("reason"), str)
         ):
             raise StateProjectionError("initial relation projection is invalid")
+    issue_ids: set[str] = set()
+    for issue in state["negotiation_issues"]:
+        if (
+            not isinstance(issue, dict)
+            or not isinstance(issue.get("id"), str)
+            or issue["id"] in issue_ids
+            or not isinstance(issue.get("title"), str)
+            or not isinstance(issue.get("description"), str)
+            or not isinstance(issue.get("baseline_disagreement"), str)
+            or not isinstance(issue.get("required_responder_ids"), list)
+            or issue.get("status") not in {"open", "proposed", "contested", "agreed"}
+            or not isinstance(issue.get("history"), list)
+        ):
+            raise StateProjectionError("negotiation issue projection is invalid")
+        issue_ids.add(issue["id"])
+    for assessment in state["negotiation_history"]:
+        if (
+            not isinstance(assessment, dict)
+            or type(assessment.get("turn_number")) is not int
+            or assessment["turn_number"] < 1
+            or not isinstance(assessment.get("consequence"), str)
+            or not isinstance(assessment.get("remaining_disagreement"), str)
+        ):
+            raise StateProjectionError("negotiation history projection is invalid")
     return state
 
 
@@ -200,6 +231,80 @@ def _apply_event(state: dict, event: object) -> None:
                 "actor_id": event.actor_id,
             }
         )
+        return
+    if event_type == "negotiation_board_initialized":
+        if state["negotiation_issues"]:
+            raise StateProjectionError("negotiation board is already initialized")
+        state["negotiation_issues"] = [
+            {
+                **seed.model_dump(mode="json"),
+                "status": "open",
+                "current_recommendation": "",
+                "proposer_role_id": "",
+                "authority": "advisory",
+                "binding_status": "non_binding",
+                "responses": [],
+                "last_consequence": "",
+                "remaining_disagreement": seed.baseline_disagreement,
+                "last_updated_turn": 0,
+                "history": [],
+            }
+            for seed in event.issues
+        ]
+        return
+    if event_type == "negotiation_turn_assessed":
+        expected_turn = int(state.get("turn_number", 0)) + 1
+        if event.turn_number != expected_turn:
+            raise StateProjectionError("negotiation assessment turn is out of sequence")
+        if any(item["turn_number"] == event.turn_number for item in state["negotiation_history"]):
+            raise StateProjectionError("negotiation assessment already exists for this turn")
+        state["negotiation_history"].append(
+            {
+                "turn_number": event.turn_number,
+                "consequence": event.consequence,
+                "remaining_disagreement": event.remaining_disagreement,
+            }
+        )
+        return
+    if event_type == "negotiation_issue_updated":
+        expected_turn = int(state.get("turn_number", 0)) + 1
+        if event.turn_number != expected_turn:
+            raise StateProjectionError("negotiation issue update turn is out of sequence")
+        issue = next(
+            (item for item in state["negotiation_issues"] if item["id"] == event.issue_id),
+            None,
+        )
+        if issue is None:
+            raise StateProjectionError("negotiation issue id is unknown")
+        expected_responders = set(issue["required_responder_ids"])
+        response_ids = {response.actor_id for response in event.responses}
+        if response_ids != expected_responders:
+            raise StateProjectionError("negotiation issue responders do not match its definition")
+        stances = [response.stance for response in event.responses]
+        derived_status = (
+            "agreed"
+            if all(stance == "accept" for stance in stances)
+            else "contested"
+            if any(stance in {"counter", "reject"} for stance in stances)
+            else "proposed"
+        )
+        if event.status != derived_status or event.authority != "advisory":
+            raise StateProjectionError("negotiation issue status is not server-derived")
+        update = event.model_dump(mode="json", exclude={"event_type"})
+        issue.update(
+            {
+                "status": event.status,
+                "current_recommendation": event.recommendation,
+                "proposer_role_id": event.proposer_role_id,
+                "authority": event.authority,
+                "binding_status": event.binding_status,
+                "responses": [response.model_dump(mode="json") for response in event.responses],
+                "last_consequence": event.consequence,
+                "remaining_disagreement": event.remaining_disagreement,
+                "last_updated_turn": event.turn_number,
+            }
+        )
+        issue["history"].append(update)
         return
     if event_type == "scene_completed":
         if state.get("completion_status") == "complete":

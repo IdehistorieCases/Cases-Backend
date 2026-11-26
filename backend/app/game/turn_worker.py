@@ -425,6 +425,25 @@ async def complete_claim(claim: Claim, proposal: dict | TurnGeneration) -> bool:
                 "reply": model_proposal.narration,
                 "dialogue": [line.model_dump(mode="json") for line in model_proposal.dialogue],
                 "outcome_summary": model_proposal.outcome_summary,
+                "negotiation_assessment": model_proposal.negotiation_assessment.model_dump(
+                    mode="json"
+                ),
+                "issue_updates": [
+                    {
+                        **update.model_dump(mode="json"),
+                        "status": next(
+                            (
+                                issue.get("status")
+                                for issue in next_state.get("negotiation_issues", [])
+                                if issue.get("id") == update.issue_id
+                            ),
+                            "proposed",
+                        ),
+                        "authority": "advisory",
+                        "binding_status": "non_binding",
+                    }
+                    for update in model_proposal.issue_updates
+                ],
                 "next_player_prompt": model_proposal.next_player_prompt,
                 "scene_status": model_proposal.scene_status,
                 "provider": generation.provenance,

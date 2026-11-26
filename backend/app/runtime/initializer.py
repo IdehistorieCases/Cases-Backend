@@ -16,6 +16,7 @@ from app.ai.llm import (
     StructuredOutputError,
 )
 from app.runtime.context import SessionPromptContext
+from app.runtime.negotiation_state import initial_negotiation_issue_state
 from app.runtime.schemas import HistoricalClaimProposal, OpeningProposal
 from app.scenarios.schema_v2 import ScenarioDefinitionV2
 
@@ -28,6 +29,7 @@ MAX_PROMPT_CHARS = 48_000
 OPENING_SCHEMA = OpeningProposal.model_json_schema()
 PINNED_PRESENT_ACTOR_IDS = {
     ("versailles-1919", "3.1-ai"): frozenset({"britain", "france", "china"}),
+    ("versailles-1919", "3.1-negotiation-ai"): frozenset({"britain", "france", "china"}),
 }
 
 SYSTEM_PROMPT = """Du er fortæller i et dansk, tekstbaseret historisk læringsspil.
@@ -181,8 +183,10 @@ def _validate_output(
     return (proposal, []) if not issues else (None, issues)
 
 
-def _derive_state(proposal: OpeningProposal) -> dict:
-    """Project only validated opening fields into a fresh, server-shaped state object."""
+def _derive_state(
+    proposal: OpeningProposal, definition: ScenarioDefinitionV2
+) -> dict:
+    """Project validated opening fields and server-authored issue state."""
     return {
         "runtime_version": "v2_ai",
         "world_date": proposal.world_date,
@@ -201,6 +205,8 @@ def _derive_state(proposal: OpeningProposal) -> dict:
             {"id": f"opening-{index}", "text": text, "status": "open"}
             for index, text in enumerate(proposal.unresolved_threads, start=1)
         ],
+        "negotiation_issues": initial_negotiation_issue_state(definition),
+        "negotiation_history": [],
         "historical_claims": [
             {
                 "claim": claim.claim,
@@ -500,7 +506,7 @@ async def generate_opening(
             }
             return OpeningGeneration(
                 opening=opening,
-                initial_state=_derive_state(proposal),
+                initial_state=_derive_state(proposal, definition),
                 provenance=provenance,
                 attempt_metadata=attempts,
             )
