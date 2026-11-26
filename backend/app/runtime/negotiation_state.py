@@ -13,6 +13,7 @@ def initial_negotiation_issue_state(definition: ScenarioDefinitionV2) -> list[di
             "baseline_disagreement": issue.baseline_disagreement,
             "required_responder_ids": list(issue.required_responder_ids),
             "status": "open",
+            "last_action_type": "none",
             "current_recommendation": "",
             "proposer_role_id": "",
             "authority": "advisory",

@@ -239,6 +239,7 @@ def _apply_event(state: dict, event: object) -> None:
             {
                 **seed.model_dump(mode="json"),
                 "status": "open",
+                "last_action_type": "none",
                 "current_recommendation": "",
                 "proposer_role_id": "",
                 "authority": "advisory",
@@ -281,19 +282,23 @@ def _apply_event(state: dict, event: object) -> None:
         if response_ids != expected_responders:
             raise StateProjectionError("negotiation issue responders do not match its definition")
         stances = [response.stance for response in event.responses]
-        derived_status = (
-            "agreed"
-            if all(stance == "accept" for stance in stances)
-            else "contested"
-            if any(stance in {"counter", "reject"} for stance in stances)
-            else "proposed"
-        )
+        if event.action_type == "discussion":
+            derived_status = issue["status"]
+        else:
+            derived_status = (
+                "agreed"
+                if all(stance == "accept" for stance in stances)
+                else "contested"
+                if any(stance in {"counter", "reject"} for stance in stances)
+                else "proposed"
+            )
         if event.status != derived_status or event.authority != "advisory":
             raise StateProjectionError("negotiation issue status is not server-derived")
         update = event.model_dump(mode="json", exclude={"event_type"})
         issue.update(
             {
                 "status": event.status,
+                "last_action_type": event.action_type,
                 "current_recommendation": event.recommendation,
                 "proposer_role_id": event.proposer_role_id,
                 "authority": event.authority,

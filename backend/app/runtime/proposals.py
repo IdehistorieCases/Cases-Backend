@@ -62,6 +62,7 @@ class DelegationIssueResponse(StrictModel):
 
 class NegotiationIssueUpdate(StrictModel):
     issue_id: Id
+    action_type: Literal["proposal", "discussion"]
     player_action_excerpt: ActionExcerpt
     recommendation: Text
     responses: list[DelegationIssueResponse] = Field(max_length=16)
@@ -356,6 +357,7 @@ class NegotiationTurnAssessedEvent(StrictModel):
 class NegotiationIssueUpdatedEvent(StrictModel):
     event_type: Literal["negotiation_issue_updated"]
     issue_id: Id
+    action_type: Literal["proposal", "discussion"]
     turn_number: StrictInt = Field(ge=1)
     player_action_excerpt: ActionExcerpt
     proposer_role_id: Id

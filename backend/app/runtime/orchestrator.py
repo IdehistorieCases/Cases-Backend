@@ -42,8 +42,8 @@ from app.runtime.proposals import (
 from app.runtime.validator import ProposalValidationError, validate_turn_proposal
 from app.scenarios.schema_v2 import ScenarioDefinitionV2
 
-TURN_PROMPT_VERSION = "freeform-turn-da-v15-negotiation"
-TURN_SCHEMA_VERSION = "turn-agent-response-schema-v3"
+TURN_PROMPT_VERSION = "freeform-turn-da-v16-negotiation-issue-action"
+TURN_SCHEMA_VERSION = "turn-agent-response-schema-v4"
 MAX_TURN_TOKENS = 8192
 MAX_FINAL_CORRECTIONS = 2
 MAX_TURN_PROMPT_CHARS = 48_000
@@ -112,19 +112,23 @@ begrænsninger; fortæl ikke svaret kun gennem narration. Skriv ikke spillerens 
 
 Negotiation_contract: spilleren er en fiktiv britisk rådgiver og har kun rådgivende myndighed.
 Hver endelig proposal skal indeholde negotiation_assessment med turens konkrete konsekvens og
-den uenighed, der stadig består. Brug issue_updates kun når den aktuelle spillerhandling faktisk
-fremsætter, ændrer, accepterer, afviser eller trækker et konkret forslag til et kendt issue.
+den uenighed, der stadig består. Når current_state.negotiation_issues ikke er tom, skal issue_updates
+indeholde mindst én opdatering til det punkt, der bedst passer til spillerens aktuelle handling; returnér
+ikke en tom liste. Brug action_type="proposal" for et konkret vilkår, en ændring, accept, afvisning
+eller tilbagetrækning. Brug action_type="discussion" for et spørgsmål eller en diskussion uden et
+konkret vilkår; skriv tydeligt i recommendation, at intet nyt vilkår foreslås. En discussion gemmes i
+forhandlingshistorikken, men ændrer ikke punktets status.
 Gengiv aldrig en spilleranbefaling som en bindende britisk beslutning eller en underskrevet traktat.
 Udfyld player_action_excerpt med en ordret, sammenhængende del af player_action_exact, så
 backend kan kontrollere, at forslaget kom fra spilleren. Brug kun issue_id fra negotiation_issues.
-For hvert issue update skal du beskrive rådgiverens anbefaling, én reaktion fra hver
-required_responder_ids delegation med stance accept/counter/reject/defer, samt konsekvens og
-resterende uenighed. Counter kræver et konkret counteroffer. Opdatér ikke andre issues af sig selv.
-Status beregnes af backend: accept fra alle giver kun foreløbig enighed; counter eller reject giver
-omstridt; andre reaktioner efter et forslag giver foreslået. Ingen status kan gøre forslaget
-bindende. Hvis handlingen kun er et spørgsmål eller en diskussion uden konkret term, returnér
-issue_updates=[] og forklar i assessment at der ikke blev fremsat et nyt bindende vilkår.
-Spørgsmål, hypotetiske muligheder og forslag fra modparter må ikke gemmes som spillerens tilbud.
+For hvert issue update skal du beskrive rådgiverens anbefaling eller diskussionspunkt, én reaktion fra
+hver required_responder_ids delegation med stance accept/counter/reject/defer, samt konsekvens og
+resterende uenighed. Ved action_type="discussion" skal delegationerne bruge stance="defer" og
+forklare deres aktuelle position uden at acceptere et nyt vilkår. Counter kræver et konkret counteroffer.
+Opdatér ikke andre issues af sig selv. Status beregnes af backend: discussion bevarer status; accept
+fra alle til et proposal giver kun foreløbig enighed; counter eller reject giver omstridt; andre svar til et
+proposal giver foreslået. Ingen status kan gøre forslaget bindende. Spørgsmål, hypotetiske muligheder
+og forslag fra modparter må ikke gemmes som spillerens tilbud.
 
 Hold fortællingen på højst ca. 800 tegn, og afslut alle sætninger helt.
 Returnér kun et JSON-objekt, der opfylder skemaet."""
@@ -182,6 +186,10 @@ REPAIR_GUIDANCE = {
     ),
     "unknown_objective_id": "Brug kun objective_id fra allowed_objective_ids.",
     "unknown_negotiation_issue": "Brug kun issue_id fra current_state.negotiation_issues.",
+    "negotiation_update_required": (
+        "Returnér mindst én issue_update for det mest relevante forhandlingspunkt. Brug action_type=discussion, "
+        "hvis spilleren spørger uden at foreslå et konkret vilkår."
+    ),
     "duplicate_negotiation_update": "Returnér højst én opdatering pr. issue.",
     "negotiation_proposal_not_grounded": (
         "player_action_excerpt skal være ordret sammenhængende tekst fra player_action_exact."

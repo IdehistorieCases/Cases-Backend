@@ -335,6 +335,13 @@ def validate_turn_proposal(
     }
     if state_issue_ids != set(issue_definitions):
         issues.append("invalid_current_state")
+    if issue_definitions and not proposal.issue_updates:
+        issues.append("negotiation_update_required")
+    issue_state_statuses = {
+        item["id"]: item.get("status", "open")
+        for item in issue_states
+        if isinstance(item, dict) and isinstance(item.get("id"), str)
+    }
     issue_statuses: dict[str, str] = {}
     updated_issue_ids: set[str] = set()
     normalized_action = " ".join(player_action.casefold().split())
@@ -358,13 +365,16 @@ def validate_turn_proposal(
         if role is not None and role.actor_id in expected_responders:
             issues.append("negotiation_responder_mismatch")
         stances = [response.stance for response in update.responses]
-        issue_statuses[update.issue_id] = (
-            "agreed"
-            if stances and all(stance == "accept" for stance in stances)
-            else "contested"
-            if any(stance in {"counter", "reject"} for stance in stances)
-            else "proposed"
-        )
+        if update.action_type == "discussion":
+            issue_statuses[update.issue_id] = issue_state_statuses.get(update.issue_id, "open")
+        else:
+            issue_statuses[update.issue_id] = (
+                "agreed"
+                if stances and all(stance == "accept" for stance in stances)
+                else "contested"
+                if any(stance in {"counter", "reject"} for stance in stances)
+                else "proposed"
+            )
 
     existing_threads = current_state.get("open_threads", [])
     if not isinstance(existing_threads, list):
@@ -505,6 +515,7 @@ def validate_turn_proposal(
         NegotiationIssueUpdatedEvent(
             event_type="negotiation_issue_updated",
             issue_id=update.issue_id,
+            action_type=update.action_type,
             turn_number=next_turn,
             player_action_excerpt=update.player_action_excerpt,
             proposer_role_id=role.id,
