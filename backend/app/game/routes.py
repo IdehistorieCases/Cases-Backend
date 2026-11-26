@@ -305,6 +305,7 @@ async def get_scenario(slug: str):
                 **common,
                 "chronology": definition["chronology"],
                 "interaction_guidance": definition["interaction_guidance"],
+                "negotiation_issues": definition.get("negotiation_issues", []),
                 "completion_policy": definition["completion_policy"],
                 "optional_beats": definition["optional_beats"],
             }
