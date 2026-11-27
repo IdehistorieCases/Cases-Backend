@@ -13,10 +13,12 @@ from app.rag.corpus import load_corpus
 from app.rag.repository import _validate_scenario_policy
 from app.runtime.context import SessionPromptContext
 from app.runtime.orchestrator import (
+    MAX_INFERENCE_PROMPT_CHARS,
     REPAIR_GUIDANCE,
     SYSTEM_PROMPT,
     TURN_PROMPT_VERSION,
     TURN_SCHEMA_VERSION,
+    _build_bounded_turn_prompt,
     _build_turn_prompt,
     _explicit_evidence_search_queries,
     _narration_quality_issue_codes,
@@ -76,8 +78,8 @@ def test_two_playable_v2_cases_have_distinct_data_and_reviewed_evidence():
 
 
 def test_shared_turn_prompt_honors_explicit_requests_without_state_changes():
-    assert TURN_PROMPT_VERSION == "freeform-turn-da-v13"
-    assert TURN_SCHEMA_VERSION == "turn-agent-response-schema-v2"
+    assert TURN_PROMPT_VERSION == "freeform-turn-da-v16-negotiation-issue-action"
+    assert TURN_SCHEMA_VERSION == "turn-agent-response-schema-v4"
     assert "state_operations være []" in SYSTEM_PROMPT
     assert "state_operations være []" in REPAIR_GUIDANCE["contradictory_operations"]
     assert "search_approved_evidence" in SYSTEM_PROMPT
@@ -183,6 +185,38 @@ def test_turn_prompt_repeats_latest_action_after_context_and_history():
     )
     assert payload["player_action"] == action
     assert prompt.endswith(json.dumps(action, ensure_ascii=False))
+
+
+def test_turn_prompt_budget_counts_system_message_and_trims_oldest_history():
+    context = SessionPromptContext(
+        payload={"evidence": {"passages": []}},
+        world_date=date(1919, 4, 1),
+        evidence_status="no_eligible_sources",
+        serialized_chars=0,
+        stage="turn",
+        mode="gameplay",
+        metadata={"evidence": {"eligible_source_count": 0}},
+    )
+    visible_turns = [
+        {"player_action": f"Turn {index}", "reply": "Svar. " + ("x" * 18_000)}
+        for index in range(1, 4)
+    ]
+    prompt, payload, retained_turns = _build_bounded_turn_prompt(
+        context=context,
+        current_state={"present_actor_ids": ["britain"]},
+        recent_events=[],
+        visible_turns=visible_turns,
+        player_action="Fortsæt forhandlingen.",
+        allowed_actor_ids=["britain"],
+        allowed_objective_ids=[],
+        tool_calls_remaining=0,
+        tool_history=[],
+        reserved_chars=1_000,
+    )
+
+    assert [turn["player_action"] for turn in retained_turns] == ["Turn 2", "Turn 3"]
+    assert payload["recent_player_visible_turns"] == retained_turns
+    assert len(SYSTEM_PROMPT) + len(prompt) + 1_000 <= MAX_INFERENCE_PROMPT_CHARS
 
 
 def test_turn_model_can_request_multiple_bounded_approved_evidence_searches():
